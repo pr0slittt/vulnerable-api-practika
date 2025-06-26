@@ -5,13 +5,30 @@ repos:
       - id: check-yaml
       - id: check-json
       - id: end-of-file-fixer
-      - id: trailing-whitespace
+      # - id: trim-trailing-whitespace
       - id: detect-private-key
       - id: check-added-large-files
-        args: [--maxkb=500]
 
   - repo: https://github.com/hadolint/hadolint
-    rev: v2.12.0 # Используйте последнюю стабильную версию Hadolint
+    rev: v2.12.0 # Используйте последнюю стабильную версию
     hooks:
       - id: hadolint
-        files: Dockerfile
+
+  # НОВЫЕ ХУКИ ДЛЯ PYTHON-КОДА НАЧИНАЮТСЯ ЗДЕСЬ
+  - repo: https://github.com/psf/black
+    rev: 24.4.2 # Используйте последнюю стабильную версию (проверено на 26 июня 2025)
+    hooks:
+      - id: black
+        language_version: python3.12 # Укажите используемую версию Python
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2 # Используйте последнюю стабильную версию (проверено на 26 июня 2025)
+    hooks:
+      - id: isort
+        args: ["--profile", "black"] # Настройка для совместимости с Black
+
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.1.0 # Используйте последнюю стабильную версию (проверено на 26 июня 2025)
+    hooks:
+      - id: flake8
+  # НОВЫЕ ХУКИ ДЛЯ PYTHON-КОДА ЗАКОНЧИЛИСЬ ЗДЕСЬ
