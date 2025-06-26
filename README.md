@@ -4,7 +4,7 @@ This repository contains an example Python API that is vulnerable to several dif
 
 ## Installation
 
-We will be using docker images and containers to install all the api. 
+We will be using docker images and containers to install all the api.
 
 ### MacOSX
 
@@ -64,7 +64,7 @@ vAPI is implemented using the Bottle Python Framework and consists of a user dat
   * Returns the user record for the user specfied, provided the auth token is not expired and is valid for the user id specified
   * Each user can only access their own record
 
-#### Test Users 
+#### Test Users
 
 Included with install
 
@@ -116,7 +116,7 @@ Host: 192.168.13.37:8081
     }
 }
 
- 
+
 ```
 
 or
@@ -136,7 +136,7 @@ Host: 192.168.13.37:8081
     </passwordCredentials>
 </auth>
 
- 
+
 ```
 ###### Response
 ```
@@ -144,7 +144,7 @@ HTTP/1.0 200 OK
 Date: Tue, 07 Jul 2015 15:34:01 GMT
 Server: WSGIServer/0.1 Python/2.7.6
 Content-Type: text/html; charset=UTF-8
- 
+
 {
     "access":
         {
@@ -174,7 +174,7 @@ Retrieve the user's entry in the user database
 1. None
 
 ###### Response JSON Object
-1. User 
+1. User
   * id (string) – Unique user ID
   * name (string) – Username
   * password (string) – Password
@@ -204,7 +204,7 @@ Date: Mon, 06 Jul 2015 22:08:56 GMT
 Server: WSGIServer/0.1 Python/2.7.9
 Content-Length: 73
 Content-Type: application/json
- 
+
 {
     "response":
         {
@@ -227,7 +227,7 @@ Creates an user with the given username and password.
 1. X-Auth-Token - Valid token for the admin user
 
 ###### Request JSON Object
-1. User 
+1. User
   * name (string) – Username that matches above conditions
   * password (string) – Password
 
@@ -266,7 +266,7 @@ Date: Mon, 06 Jul 2015 22:08:56 GMT
 Server: WSGIServer/0.1 Python/2.7.9
 Content-Length: 68
 Content-Type: application/json
- 
+
 {
     "response":
         {
@@ -283,7 +283,7 @@ Content-Type: application/json
 
 ##### GET /uptime
 ##### GET /uptime/FLAG
-Returns the server uptime, and now supports pretty formatting just by passing in command line flags. 
+Returns the server uptime, and now supports pretty formatting just by passing in command line flags.
 Super useful for system administrators!
 
 
@@ -317,10 +317,10 @@ Content-Length: 0
  Server: WSGIServer/0.1 Python/2.7.6
  Content-Length: 90
  Content-Type: text/html; charset=UTF-8
- 
+
 {
   "response": {
-    "Command": "uptime -s", 
+    "Command": "uptime -s",
     "Output": "2016-02-17 09:42:44\n"
   }
 }
@@ -343,3 +343,4 @@ Vulnerability Categories Include:
 11. Command Injection
 12. Regex DDoS
 
+Testing pre-commit hooks.

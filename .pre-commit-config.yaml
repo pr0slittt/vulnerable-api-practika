@@ -1,0 +1,17 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0 # Используйте последнюю стабильную версию
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: [--maxkb=500]
+
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0 # Используйте последнюю стабильную версию Hadolint
+    hooks:
+      - id: hadolint
+        files: Dockerfile
