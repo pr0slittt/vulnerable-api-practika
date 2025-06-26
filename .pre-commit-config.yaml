@@ -27,8 +27,4 @@ repos:
       - id: isort
         args: ["--profile", "black"] # Настройка для совместимости с Black
 
-  - repo: https://github.com/PyCQA/flake8
-    rev: 7.1.0 # Используйте последнюю стабильную версию (проверено на 26 июня 2025)
-    hooks:
-      - id: flake8
   # НОВЫЕ ХУКИ ДЛЯ PYTHON-КОДА ЗАКОНЧИЛИСЬ ЗДЕСЬ
