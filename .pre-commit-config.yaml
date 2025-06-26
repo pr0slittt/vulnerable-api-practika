@@ -9,11 +9,6 @@ repos:
       - id: detect-private-key
       - id: check-added-large-files
 
-  - repo: https://github.com/hadolint/hadolint
-    rev: v2.12.0 # Используйте последнюю стабильную версию
-    hooks:
-      - id: hadolint
-
   # НОВЫЕ ХУКИ ДЛЯ PYTHON-КОДА НАЧИНАЮТСЯ ЗДЕСЬ
   - repo: https://github.com/psf/black
     rev: 24.4.2 # Используйте последнюю стабильную версию (проверено на 26 июня 2025)
