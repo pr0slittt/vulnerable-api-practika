@@ -1,0 +1,45 @@
+name: DevSecOps Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9' # Или любая другая версия Python, которую вы используете
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r app/requirements.txt # Устанавливаем зависимости вашего приложения
+
+      - name: Run Grype SCA Scan
+        uses: anchore/scan-action@v3
+        with:
+          path: ./app # Путь к папке вашего приложения, где находятся requirements.txt
+          output-format: sarif
+          fail-on-severity: high # Или medium, чтобы находить больше
+          severity-cutoff: medium # Минимальная серьезность для отчета
+          upload-artifact: true
+          output-file: grype-results.sarif # Выходной файл для отчета
+
+      - name: Upload SARIF results to GitHub Security tab
+        if: success() || failure() # Выполняется даже если предыдущий шаг упал
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: grype-results.sarif
+          wait-for-processing: true
