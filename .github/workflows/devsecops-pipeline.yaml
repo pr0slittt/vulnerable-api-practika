@@ -32,7 +32,6 @@ jobs:
         with:
           path: ./app
           output-format: sarif
-          output: grype-results.sarif
           fail-build: true
           severity-cutoff: medium
 
