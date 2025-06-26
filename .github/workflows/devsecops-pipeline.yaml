@@ -4,11 +4,11 @@ on:
   push:
     branches:
       - main
-      - master
+      - master # Добавьте, если используете ветку master
   pull_request:
     branches:
       - main
-      - master
+      - master # Добавьте, если используете ветку master
 
 jobs:
   build-and-scan:
@@ -20,24 +20,24 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.9' # Убедитесь, что это правильная версия Python для вашего проекта
+          python-version: '3.9' # Важно: Укажите ту версию Python, которую использует ваше приложение
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r app/requirements.txt # Убедитесь, что requirements.txt находится в app/
+          pip install -r app/requirements.txt # Убедитесь, что requirements.txt находится в папке 'app'
 
       - name: Run Grype SCA Scan
         uses: anchore/scan-action@v3
         with:
-          path: ./app/requirements.txt
+          path: ./app # Исправлено: Указываем директорию, а не конкретный файл requirements.txt
           output-format: sarif
-          fail-build: true
-          severity-cutoff: medium
+          fail-build: true # Пайплайн завершится ошибкой, если найдены уязвимости (по умолчанию medium и выше)
+          severity-cutoff: medium # Минимальная серьезность, которая будет отображаться в отчете
 
       - name: Upload SARIF results to GitHub Security tab
-        if: success() || failure()
+        if: success() || failure() # Выполняется даже если предыдущий шаг упал, чтобы отчеты всегда загружались
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: grype-results.sarif
+          sarif_file: grype-results.sarif # Это имя файла, которое Grype генерирует по умолчанию
           wait-for-processing: true
