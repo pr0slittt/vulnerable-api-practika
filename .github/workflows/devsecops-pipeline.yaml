@@ -30,7 +30,7 @@ jobs:
       - name: Run Grype SCA Scan
         uses: anchore/scan-action@v3
         with:
-          path: ./app
+          path: ./app/requirements.txt
           output-format: sarif
           fail-build: true
           severity-cutoff: medium
