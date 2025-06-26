@@ -20,7 +20,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.9' # Или любая другая версия Python, которую вы используете
+          python-version: '3.9' # Важно: Укажите ту версию Python, которую использует ваше приложение
 
       - name: Install dependencies
         run: |
@@ -30,15 +30,14 @@ jobs:
       - name: Run Grype SCA Scan
         uses: anchore/scan-action@v3
         with:
-          path: ./app # Путь к папке вашего приложения, где находятся requirements.txt
+          path: ./app
           output-format: sarif
-          fail-on-severity: high # Или medium, чтобы находить больше
-          severity-cutoff: medium # Минимальная серьезность для отчета
-          upload-artifact: true
-          output-file: grype-results.sarif # Выходной файл для отчета
+          output: grype-results.sarif
+          fail-build: true
+          severity-cutoff: medium
 
       - name: Upload SARIF results to GitHub Security tab
-        if: success() || failure() # Выполняется даже если предыдущий шаг упал
+        if: success() || failure()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: grype-results.sarif
