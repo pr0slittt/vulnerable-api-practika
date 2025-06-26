@@ -1,0 +1,38 @@
+.idea
+.vagrant
+# Python virtual environments
+venv/
+.venv/
+env/
+venv_py3_12/ # Это важно для игнорирования вашего нового окружения
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Editor/IDE specific files (e.g., VS Code, Visual Studio)
+.vs/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.idea/
+*.iml
+*.ipr
+*.iws
+*.sln.docstates
+*.user
+*.suo
+*.csi
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+*.bak

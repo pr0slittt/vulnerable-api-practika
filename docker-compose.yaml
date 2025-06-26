@@ -1,0 +1,13 @@
+# docker-compose.yml (в корне вашего репозитория)
+version: '3.8'
+services:
+  vulnerable-api:
+    build:
+      context: ./app  # Указываем, что Dockerfile и исходники находятся в ./app
+      dockerfile: Dockerfile # Имя Dockerfile внутри ./app
+    ports:
+      - "8081:8081" # Проксируем порт 8081 контейнера на порт 8081 вашей локальной машины
+    volumes:
+      - ./app:/app    # Монтируем вашу локальную директорию ./app в /app внутри контейнера
+    working_dir: /app # Устанавливаем /app как рабочую директорию внутри контейнера
+    command: python vAPI.py # Команда для запуска API внутри контейнера
