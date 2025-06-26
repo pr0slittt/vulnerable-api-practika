@@ -20,12 +20,12 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.9' # Важно: Укажите ту версию Python, которую использует ваше приложение
+          python-version: '3.9' # Убедитесь, что это правильная версия Python для вашего проекта
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r app/requirements.txt # Устанавливаем зависимости вашего приложения
+          pip install -r app/requirements.txt # Убедитесь, что requirements.txt находится в app/
 
       - name: Run Grype SCA Scan
         uses: anchore/scan-action@v3
