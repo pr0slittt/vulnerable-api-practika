@@ -13,6 +13,8 @@ on:
 jobs:
   build-and-scan:
     runs-on: ubuntu-latest
+    permissions: # <-- ДОБАВЛЕН ЭТОТ БЛОК
+      security-events: write # <-- И ЭТА СТРОКА
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,20 +30,16 @@ jobs:
           pip install -r app/requirements.txt # Убедитесь, что requirements.txt находится в папке 'app'
 
       - name: Download Grype
-        # Скачиваем исполняемый файл Grype напрямую, чтобы иметь над ним полный контроль
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
           grype version
 
       - name: Run Grype SCA Scan and Save SARIF
-        # Запускаем Grype как команду и перенаправляем вывод в файл grype-results.sarif
-        # Используем '|| true', чтобы шаг не падал, если Grype найдет уязвимости и выдаст ненулевой код выхода
         run: |
           grype dir:./app -o sarif > grype-results.sarif || true
 
       - name: Upload SARIF results to GitHub Security tab
-        # Этот шаг должен найти grype-results.sarif, так как мы его явно создали
-        if: always() # Запускаем всегда, даже если предыдущие шаги упали, чтобы попытаться загрузить отчет
+        if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: grype-results.sarif
