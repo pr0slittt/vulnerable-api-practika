@@ -39,19 +39,15 @@ jobs:
         run: |
           set -euxo pipefail # Останавливать выполнение при ошибке
           echo "Starting Semgrep scan. PWD: $(pwd)"
-          # Semgrep Action itself handles the output path internally when 'output' is provided in 'with:'
-          # We are running the CLI directly here, so ensure the action is available.
-          # The returntocorp/semgrep-action@v1 is designed to be used with 'uses', not directly in 'run'.
-          # If it were to be run from CLI, it would be 'semgrep --config ... --output ...'
-          # Let's revert this back to 'uses:' to properly leverage the action.
-          # The previous attempt to run it directly might be part of the problem for Semgrep.
+          # В этом шаге мы фактически не вызываем 'returntocorp/semgrep-action@v1' напрямую как команду 'run',
+          # а полагаемся на то, что он будет вызван как 'uses:' действие в следующем шаге.
+          # Этот блок 'run' был здесь для отладки, но на самом деле он не запускает сам Semgrep-action.
+          # Semgrep-action будет работать в шаге 'Execute Semgrep SAST Scan (as 'uses:' action)'.
+          echo "Semgrep scan will be executed by a 'uses:' action in the next step."
 
-          # Reverting to the correct way of using semgrep-action
-          # This step will be empty and Semgrep will be called as a 'uses:' action below.
-          echo "Semgrep scan will be executed by a 'uses:' action."
 
       - name: Execute Semgrep SAST Scan (as 'uses:' action)
-        # This step will actually run the semgrep-action
+        # Этот шаг фактически запустит semgrep-action.
         uses: returntocorp/semgrep-action@v1
         with:
           config: |
@@ -59,15 +55,15 @@ jobs:
             p/python-web
             p/security-audit
           target: './app'
-          output: '${{ github.workspace }}/semgrep-results.sarif'
+          output: '${{ github.workspace }}/semgrep-results.sarif' # SARIF будет создан в корне рабочей директории
           output-format: sarif
 
       - name: List files after Semgrep scan
         run: |
           echo "Listing files in ${{ github.workspace }}:"
-          ls -l ${{ github.workspace }}
+          ls -l ${{ github.workspace }} # <-- КЛЮЧЕВОЙ ШАГ ОТЛАДКИ
           echo "Listing files recursively in ${{ github.workspace }}:"
-          ls -lR ${{ github.workspace }}
+          ls -lR ${{ github.workspace }} # <-- Добавлено для более глубокой проверки
           if [ -f "${{ github.workspace }}/semgrep-results.sarif" ]; then
             echo "semgrep-results.sarif content (first 100 lines):"
             head -n 100 "${{ github.workspace }}/semgrep-results.sarif"
@@ -79,7 +75,7 @@ jobs:
         if: success() || failure() # Всегда пытаться загрузить
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'semgrep-results.sarif'
+          sarif_file: 'semgrep-results.sarif' # Ищем в корне
           wait-for-processing: true
 
       - name: Download Grype
@@ -96,16 +92,16 @@ jobs:
           set -euxo pipefail
           echo "Starting Grype scan. PWD: $(pwd)"
           # ИСПРАВЛЕНИЕ: Используем опцию --file для Grype, чтобы явно указать выходной файл
-          grype dir:./app -o sarif --file "${{ github.workspace }}/grype-results.sarif" || true
+          grype dir:./app -o sarif --file "${{ github.workspace }}/grype-results.sarif" || true # Grype должен создать здесь файл
           echo "Grype command exit code: $?"
           echo "Grype scan finished. PWD: $(pwd)"
 
       - name: List files after Grype scan
         run: |
           echo "Listing files in ${{ github.workspace }}:"
-          ls -l ${{ github.workspace }}
+          ls -l ${{ github.workspace }} # <-- КЛЮЧЕВОЙ ШАГ ОТЛАДКИ
           echo "Listing files recursively in ${{ github.workspace }}:"
-          ls -lR ${{ github.workspace }}
+          ls -lR ${{ github.workspace }} # <-- Добавлено для более глубокой проверки
           if [ -f "${{ github.workspace }}/grype-results.sarif" ]; then
             echo "grype-results.sarif content (first 100 lines):"
             head -n 100 "${{ github.workspace }}/grype-results.sarif"
@@ -117,5 +113,5 @@ jobs:
         if: success() || failure() # Всегда пытаться загрузить
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'grype-results.sarif'
+          sarif_file: 'grype-results.sarif' # Ищем в корне
           wait-for-processing: true
