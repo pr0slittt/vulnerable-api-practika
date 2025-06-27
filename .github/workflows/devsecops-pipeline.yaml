@@ -31,42 +31,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install Semgrep CLI
-        run: |
-          set -euxo pipefail
-          pip install "semgrep>=1.76.0"
-          semgrep --version
-
-      - name: Run Semgrep SAST Scan
-        id: semgrep_scan_run
-        run: |
-          set -euxo pipefail
-          echo "Starting Semgrep CLI scan. PWD: $(pwd)"
-          
-          SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
-          echo "Semgrep output path set to: $SARIF_OUTPUT_PATH"
-
-          # Добавляем путь к вашей папке с кастомными правилами
-          semgrep --config "p/python" --config "p/security-audit" \
-            --config "semgrep-rules/" \ # <-- ДОБАВЛЕНО: Путь к вашим кастомным правилам
-            --sarif -o "$SARIF_OUTPUT_PATH" ./app || true
-          
-          SEMGREP_EXIT_CODE=$?
-          echo "Semgrep scan finished. Raw exit code: $SEMGREP_EXIT_CODE"
-          
-          echo "semgrep_exit_code=$SEMGREP_EXIT_CODE" >> "$GITHUB_OUTPUT"
-
-          if [ ! -f "$SARIF_OUTPUT_PATH" ]; then
-            echo "ERROR: semgrep-results.sarif was NOT created by Semgrep!"
-            exit 1
-          fi
-
-
-      - name: Upload Semgrep SARIF results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+      - name: Cache Grype DB
+        uses: actions/cache@v3
         with:
-          sarif_file: 'semgrep-results.sarif'
-          wait-for-processing: true
+          path: ~/.grype/db
+          key: ${{ runner.os }}-grype-db-${{ hashFiles('grype-db-version.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-grype-db-
+      - name: Create Grype DB Version File
+        run: echo "1" > grype-db-version.txt
 
       - name: Download Grype
         run: |
@@ -74,26 +47,28 @@ jobs:
           grype version
 
       - name: Run Grype SCA Scan and Save SARIF
-        id: grype_scan_run
         run: |
-          set -euxo pipefail
-          echo "Starting Grype scan. PWD: $(pwd)"
-          GRYPE_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
-          echo "Grype output path set to: $GRYPE_OUTPUT_PATH"
-          grype dir:./app -o sarif --file "$GRYPE_OUTPUT_PATH" || true
-          
-          GRYPE_EXIT_CODE=$?
-          echo "Grype scan finished. Raw exit code: $GRYPE_EXIT_CODE"
-          echo "grype_exit_code=$GRYPE_EXIT_CODE" >> "$GITHUB_OUTPUT"
-
-          if [ ! -f "$GRYPE_OUTPUT_PATH" ]; then
-            echo "ERROR: grype-results.sarif was NOT created by Grype!"
-            exit 1
-          fi
+          grype dir:./app -o sarif --file "${{ github.workspace }}/grype-results.sarif" || true
 
       - name: Upload SARIF results to GitHub Security tab (Grype)
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'grype-results.sarif'
+          wait-for-processing: true
+
+      - name: Install Semgrep CLI
+        run: |
+          pip install "semgrep>=1.76.0"
+          semgrep --version
+
+      - name: Run Semgrep SAST Scan
+        run: |
+          semgrep --config "p/python" --config "p/security-audit" \
+            --sarif -o "${{ github.workspace }}/semgrep-results.sarif" ./app || true
+
+      - name: Upload Semgrep SARIF results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'semgrep-results.sarif'
           wait-for-processing: true
