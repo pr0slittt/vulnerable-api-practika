@@ -80,7 +80,7 @@ jobs:
 
       - name: Build Docker Image
         run: |
-          docker build -t vulnerable-api:latest ./app
+          docker build -t vulnerable-api:latest . # <-- ИЗМЕНЕНО: Используем '.' (корневая директория) как контекст сборки
 
       - name: Run Snyk Container Scan
         uses: snyk/actions/docker@master
@@ -88,7 +88,7 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           image: vulnerable-api:latest
-          args: --file=app/Dockerfile --sarif-file-output=snyk-results.sarif
+          args: --file=Dockerfile --sarif-file-output=snyk-results.sarif # <-- ИЗМЕНЕНО: Dockerfile теперь в корне
         continue-on-error: true
 
       - name: Upload Snyk SARIF results to GitHub Security
