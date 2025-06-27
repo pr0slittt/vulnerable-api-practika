@@ -80,20 +80,21 @@ jobs:
 
       - name: Build Docker Image
         run: |
-          docker build -t vulnerable-api:latest . # <-- ИЗМЕНЕНО: Используем '.' (корневая директория) как контекст сборки
+          docker build -t vulnerable-api:latest .
 
-      - name: Run Snyk Container Scan
-        uses: snyk/actions/docker@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      - name: Run Trivy Container Scan
+        uses: aquasecurity/trivy-action@master
         with:
-          image: vulnerable-api:latest
-          args: --file=Dockerfile --sarif-file-output=snyk-results.sarif # <-- ИЗМЕНЕНО: Dockerfile теперь в корне
+          image-ref: 'vulnerable-api:latest'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
         continue-on-error: true
 
-      - name: Upload Snyk SARIF results to GitHub Security
+      - name: Upload Trivy SARIF results to GitHub Security
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: snyk-results.sarif
+          sarif_file: 'trivy-results.sarif'
           wait-for-processing: true
