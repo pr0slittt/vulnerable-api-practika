@@ -16,7 +16,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
-      packages: write
+      packages: write # Добавлено для сборки Docker-образов
 
     steps:
       - name: Checkout code
@@ -58,17 +58,17 @@ jobs:
           sarif_file: 'grype-results.sarif'
           wait-for-processing: true
 
+      - name: Install Semgrep CLI
+        run: |
+          pip install "semgrep>=1.76.0"
+          semgrep --version
+
       - name: Run Semgrep SAST Scan
-        uses: returntocorp/semgrep-action@v1
-        id: semgrep_scan
-        with:
-          config: |
-            p/python
-            p/security-audit
-          target: './app'
-          output: 'semgrep-results.sarif'
-          # output-format: sarif # Это не нужно для returntocorp/semgrep-action, так как SARIF является форматом по умолчанию для 'output'
-        
+        run: |
+          semgrep --config "p/python" --config "p/security-audit" \
+            --config "semgrep-rules/" \
+            --sarif -o "${{ github.workspace }}/semgrep-results.sarif" ./app || true
+
       - name: Upload Semgrep SARIF results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         with:
@@ -88,8 +88,8 @@ jobs:
           image-ref: 'vulnerable-api:latest'
           format: 'sarif'
           output: 'trivy-results.sarif'
-          severity: 'HIGH,CRITICAL'
-          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN' # Включаем все степени серьезности для более полного отчета
+          ignore-unfixed: false # Включаем уязвимости, для которых нет исправлений, чтобы отчет был максимально полным
         continue-on-error: true
 
       - name: Upload Trivy SARIF results to GitHub Security
