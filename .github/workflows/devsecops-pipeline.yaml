@@ -31,6 +31,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Run Semgrep SAST Scan
+        uses: returntocorp/semgrep-action@v1
+        id: semgrep_scan
+        with:
+          config: |
+            p/python
+            p/python-web
+            p/security-audit
+          target: './app'
+          output: '${{ github.workspace }}/semgrep-results.sarif'
+          output-format: sarif
+
+      - name: Upload Semgrep SARIF results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'semgrep-results.sarif'
+          wait-for-processing: true
+
       - name: Download Grype
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
