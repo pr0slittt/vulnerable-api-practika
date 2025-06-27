@@ -41,6 +41,7 @@ jobs:
             p/security-audit
           target: './app'
           output: 'semgrep-results.sarif'
+          output-format: sarif # <-- ИСПРАВЛЕНИЕ: Добавлен формат вывода SARIF
 
       - name: Upload Semgrep SARIF results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
@@ -62,4 +63,4 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: grype-results.sarif
-          wait-for-processing: true    
+          wait-for-processing: true
