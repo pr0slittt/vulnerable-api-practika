@@ -46,13 +46,9 @@ jobs:
           SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
           echo "Semgrep output path set to: $SARIF_OUTPUT_PATH"
 
-          # ИСПРАВЛЕНИЕ: Изменены опции --target на позиционный аргумент и --output-format на -o
+          # ИСПРАВЛЕНИЕ: Использование --sarif для вывода в формате SARIF 2.1.0
           semgrep --config "p/python" --config "p/security-audit" \
-            --json -o "$SARIF_OUTPUT_PATH" ./app || true
-          # --json эквивалентно --output-format json. Semgrep по умолчанию выводит JSON в файл,
-          # который затем upload-sarif парсит как SARIF.
-          # Если Semgrep CLI находит уязвимости, он возвращает код выхода 1.
-          # || true позволяет шагу завершиться успешно, даже если найдены уязвимости.
+            --sarif -o "$SARIF_OUTPUT_PATH" ./app || true
           
           SEMGREP_EXIT_CODE=$?
           echo "Semgrep scan finished. Raw exit code: $SEMGREP_EXIT_CODE"
