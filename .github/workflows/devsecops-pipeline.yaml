@@ -32,20 +32,18 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run Semgrep SAST Scan
-        uses: returntocorp/semgrep-action@v1.23.0 # <-- ОБНОВЛЕНА ВЕРСИЯ ACTION
+        uses: returntocorp/semgrep-action@v1 # <-- ИЗМЕНЕНО: используем @v1 для последней стабильной версии
         id: semgrep_scan
         with:
           config: |
             p/python
             p/security-audit
-          target: './app' # <-- ВОЗВРАЩЕНЫ ВЕРНЫЕ ПАРАМЕТРЫ для v1.23.0
-          output: 'semgrep-results.sarif' # <-- SARIF будет создан в корне рабочей директории
-          output-format: sarif # <-- Формат SARIF
-        # publish-results: true # Удален, так как мы используем github/codeql-action/upload-sarif
-        # continue-on-error: false # По умолчанию false, если не указано, чтобы шаг падал при ошибках.
+          target: './app'
+          output: 'semgrep-results.sarif'
+          output-format: sarif
 
       - name: Upload Semgrep SARIF results to GitHub Security
-        if: always() # Загружаем даже если Semgrep нашел уязвимости или упал
+        if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'semgrep-results.sarif'
