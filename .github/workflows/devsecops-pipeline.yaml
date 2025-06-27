@@ -31,16 +31,31 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install Semgrep CLI
+        run: pip install semgrep
+
       - name: Run Semgrep SAST Scan
-        uses: returntocorp/semgrep-action@v1 # <-- ИЗМЕНЕНО: используем @v1 для последней стабильной версии
-        id: semgrep_scan
-        with:
-          config: |
-            p/python
-            p/security-audit
-          target: './app'
-          output: 'semgrep-results.sarif'
-          output-format: sarif
+        run: |
+          set -euxo pipefail
+          echo "Starting Semgrep CLI scan. PWD: $(pwd)"
+          semgrep --config "p/python" --config "p/security-audit" \
+            --target "./app" \
+            --output "${{ github.workspace }}/semgrep-results.sarif" \
+            --output-format sarif || true
+          echo "Semgrep scan finished. Exit code: $?"
+
+      - name: List files after Semgrep scan
+        run: |
+          echo "Listing files in ${{ github.workspace }}:"
+          ls -l ${{ github.workspace }}
+          echo "Listing files recursively in ${{ github.workspace }}:"
+          ls -lR ${{ github.workspace }}
+          if [ -f "${{ github.workspace }}/semgrep-results.sarif" ]; then
+            echo "semgrep-results.sarif content (first 100 lines):"
+            head -n 100 "${{ github.workspace }}/semgrep-results.sarif"
+          else
+            echo "semgrep-results.sarif not found after scan."
+          fi
 
       - name: Upload Semgrep SARIF results to GitHub Security
         if: always()
@@ -56,7 +71,23 @@ jobs:
 
       - name: Run Grype SCA Scan and Save SARIF
         run: |
+          set -euxo pipefail
+          echo "Starting Grype scan. PWD: $(pwd)"
           grype dir:./app -o sarif --file "${{ github.workspace }}/grype-results.sarif" || true
+          echo "Grype scan finished. Exit code: $?"
+
+      - name: List files after Grype scan
+        run: |
+          echo "Listing files in ${{ github.workspace }}:"
+          ls -l ${{ github.workspace }}
+          echo "Listing files recursively in ${{ github.workspace }}:"
+          ls -lR ${{ github.workspace }}
+          if [ -f "${{ github.workspace }}/grype-results.sarif" ]; then
+            echo "grype-results.sarif content (first 100 lines):"
+            head -n 100 "${{ github.workspace }}/grype-results.sarif"
+          else
+            echo "grype-results.sarif not found after scan."
+          fi
 
       - name: Upload SARIF results to GitHub Security tab (Grype)
         if: always()
