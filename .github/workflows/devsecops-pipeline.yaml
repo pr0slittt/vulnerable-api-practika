@@ -16,7 +16,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
-      packages: write # Добавлено для сборки Docker-образов
+      packages: write # Добавлено для работы с Docker и Trivy
 
     steps:
       - name: Checkout code
@@ -88,8 +88,8 @@ jobs:
           image-ref: 'vulnerable-api:latest'
           format: 'sarif'
           output: 'trivy-results.sarif'
-          severity: 'HIGH,CRITICAL' # Возвращено к предыдущим значениям
-          ignore-unfixed: true # Возвращено к предыдущим значениям
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
         continue-on-error: true
 
       - name: Upload Trivy SARIF results to GitHub Security
