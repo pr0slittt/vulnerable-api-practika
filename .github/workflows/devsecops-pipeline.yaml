@@ -94,16 +94,16 @@ jobs:
           docker build -t vulnerable-api:latest .
 
       - name: Run Trivy Container Scan
-        run: |
-          set -euxo pipefail # Добавлено для более строгой отладки
-          uses: aquasecurity/trivy-action@master
-          with:
-            image-ref: 'vulnerable-api:latest'
-            format: 'sarif'
-            output: 'trivy-results.sarif'
-            severity: 'HIGH,CRITICAL'
-            ignore-unfixed: true
-          continue-on-error: true # Сохранено, чтобы пайплайн не падал, если Trivy найдет уязвимости
+        # Удален 'run: |' и 'set -euxo pipefail' из этого блока,
+        # так как 'uses' должен быть на том же уровне, что и 'name'.
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'vulnerable-api:latest'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+        continue-on-error: true # Сохранено, чтобы пайплайн не падал, если Trivy найдет уязвимости
 
       - name: List files after Trivy scan
         run: |
