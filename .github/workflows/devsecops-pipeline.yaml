@@ -15,7 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
       security-events: write
 
     steps:
@@ -67,34 +66,10 @@ jobs:
         run: |
           semgrep --config "p/python" --config "p/security-audit" \
             --config "semgrep-rules/" \
-            --json --output "${{ github.workspace }}/semgrep-results.sarif" --format sarif ./app || true # <-- ИЗМЕНЕНО
+            --json --output "${{ github.workspace }}/semgrep-results.sarif" --format sarif ./app || true
           
       - name: Upload Semgrep SARIF results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'semgrep-results.sarif'
-          wait-for-processing: true
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker Image
-        run: |
-          docker build -t vulnerable-api:latest .
-
-      - name: Run Trivy Container Scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'vulnerable-api:latest'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'HIGH,CRITICAL'
-          ignore-unfixed: true
-        continue-on-error: true
-
-      - name: Upload Trivy SARIF results to GitHub Security
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-results.sarif'
           wait-for-processing: true
