@@ -65,9 +65,21 @@ jobs:
 
       - name: Run Semgrep SAST Scan
         run: |
+          set -euxo pipefail # Добавлено для более строгой отладки
           semgrep --config "p/python" --config "p/security-audit" \
-            --json -o "${{ github.workspace }}/semgrep-results.sarif" ./app || true # <-- ИЗМЕНЕНО: Удалено --config "semgrep-rules/"
+            --sarif -o "${{ github.workspace }}/semgrep-results.sarif" ./app || true # <-- ИЗМЕНЕНО: Вернул --sarif
           
+      - name: List files after Semgrep scan
+        run: |
+          echo "Listing files in ${{ github.workspace }}:"
+          ls -l ${{ github.workspace }}
+          if [ -f "${{ github.workspace }}/semgrep-results.sarif" ]; then
+            echo "First 100 lines of semgrep-results.sarif:"
+            head -n 100 "${{ github.workspace }}/semgrep-results.sarif"
+          else
+            echo "semgrep-results.sarif was NOT found."
+          fi
+
       - name: Upload Semgrep SARIF results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         with:
@@ -82,14 +94,27 @@ jobs:
           docker build -t vulnerable-api:latest .
 
       - name: Run Trivy Container Scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'vulnerable-api:latest'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'HIGH,CRITICAL'
-          ignore-unfixed: true
-        continue-on-error: true
+        run: |
+          set -euxo pipefail # Добавлено для более строгой отладки
+          uses: aquasecurity/trivy-action@master
+          with:
+            image-ref: 'vulnerable-api:latest'
+            format: 'sarif'
+            output: 'trivy-results.sarif'
+            severity: 'HIGH,CRITICAL'
+            ignore-unfixed: true
+          continue-on-error: true # Сохранено, чтобы пайплайн не падал, если Trivy найдет уязвимости
+
+      - name: List files after Trivy scan
+        run: |
+          echo "Listing files in ${{ github.workspace }}:"
+          ls -l ${{ github.workspace }}
+          if [ -f "${{ github.workspace }}/trivy-results.sarif" ]; then
+            echo "First 100 lines of trivy-results.sarif:"
+            head -n 100 "${{ github.workspace }}/trivy-results.sarif"
+          else
+            echo "trivy-results.sarif was NOT found."
+          fi
 
       - name: Upload Trivy SARIF results to GitHub Security
         if: always()
