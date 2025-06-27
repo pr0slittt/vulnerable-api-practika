@@ -31,23 +31,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Semgrep SAST Scan
+      - name: Run Semgrep SAST Scan # Шаг для запуска Semgrep
         uses: returntocorp/semgrep-action@v1
         id: semgrep_scan
         with:
           config: |
             p/python
             p/security-audit
-          args: >-
-            --target ./app
-            --output semgrep-results.sarif
-            --output-format sarif
+          base_dir: ./app # Указываем базовую директорию для сканирования
+          publish-results: true # Разрешаем Semgrep Action автоматически публиковать результаты в GitHub Security
+        # continue-on-error: true # Удаляем, так как мы хотим, чтобы шаг падал при ошибке, если Semgrep не отработает.
 
-      - name: Upload Semgrep SARIF results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'semgrep-results.sarif'
-          wait-for-processing: true
+      # УДАЛЕНО: Шаг "Upload Semgrep SARIF results to GitHub Security"
+      # Теперь Semgrep Action сам заботится о публикации результатов.
 
       - name: Download Grype
         run: |
