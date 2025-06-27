@@ -67,8 +67,8 @@ jobs:
         run: |
           semgrep --config "p/python" --config "p/security-audit" \
             --config "semgrep-rules/" \
-            --sarif -o "${{ github.workspace }}/semgrep-results.sarif" ./app || true
-
+            --json --output "${{ github.workspace }}/semgrep-results.sarif" --format sarif ./app || true # <-- ИЗМЕНЕНО
+          
       - name: Upload Semgrep SARIF results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         with:
