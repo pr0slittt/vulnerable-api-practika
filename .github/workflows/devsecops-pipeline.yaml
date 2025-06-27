@@ -32,33 +32,37 @@ jobs:
           pip install -r requirements.txt
 
       - name: Install Semgrep CLI
-        run: pip install semgrep
+        run: |
+          set -euxo pipefail
+          pip install "semgrep>=1.76.0"
+          semgrep --version
 
       - name: Run Semgrep SAST Scan
+        id: semgrep_scan_run
         run: |
           set -euxo pipefail
           echo "Starting Semgrep CLI scan. PWD: $(pwd)"
+          
+          SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
+          echo "Semgrep output path set to: $SARIF_OUTPUT_PATH"
+
           semgrep --config "p/python" --config "p/security-audit" \
             --target "./app" \
-            --output "${{ github.workspace }}/semgrep-results.sarif" \
-            --output-format sarif || true
-          echo "Semgrep scan finished. Exit code: $?"
+            --output "$SARIF_OUTPUT_PATH" \
+            --output-format sarif
+          
+          SEMGREP_EXIT_CODE=$?
+          echo "Semgrep scan finished. Raw exit code: $SEMGREP_EXIT_CODE"
+          
+          echo "semgrep_exit_code=$SEMGREP_EXIT_CODE" >> "$GITHUB_OUTPUT"
 
-      - name: List files after Semgrep scan
-        run: |
-          echo "Listing files in ${{ github.workspace }}:"
-          ls -l ${{ github.workspace }}
-          echo "Listing files recursively in ${{ github.workspace }}:"
-          ls -lR ${{ github.workspace }}
-          if [ -f "${{ github.workspace }}/semgrep-results.sarif" ]; then
-            echo "semgrep-results.sarif content (first 100 lines):"
-            head -n 100 "${{ github.workspace }}/semgrep-results.sarif"
-          else
-            echo "semgrep-results.sarif not found after scan."
+          if [ ! -f "$SARIF_OUTPUT_PATH" ]; then
+            echo "ERROR: semgrep-results.sarif was NOT created by Semgrep!"
+            exit 1
           fi
 
+
       - name: Upload Semgrep SARIF results to GitHub Security
-        if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'semgrep-results.sarif'
@@ -70,23 +74,21 @@ jobs:
           grype version
 
       - name: Run Grype SCA Scan and Save SARIF
+        id: grype_scan_run
         run: |
           set -euxo pipefail
           echo "Starting Grype scan. PWD: $(pwd)"
-          grype dir:./app -o sarif --file "${{ github.workspace }}/grype-results.sarif" || true
-          echo "Grype scan finished. Exit code: $?"
+          GRYPE_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
+          echo "Grype output path set to: $GRYPE_OUTPUT_PATH"
+          grype dir:./app -o sarif --file "$GRYPE_OUTPUT_PATH" || true
+          
+          GRYPE_EXIT_CODE=$?
+          echo "Grype scan finished. Raw exit code: $GRYPE_EXIT_CODE"
+          echo "grype_exit_code=$GRYPE_EXIT_CODE" >> "$GITHUB_OUTPUT"
 
-      - name: List files after Grype scan
-        run: |
-          echo "Listing files in ${{ github.workspace }}:"
-          ls -l ${{ github.workspace }}
-          echo "Listing files recursively in ${{ github.workspace }}:"
-          ls -lR ${{ github.workspace }}
-          if [ -f "${{ github.workspace }}/grype-results.sarif" ]; then
-            echo "grype-results.sarif content (first 100 lines):"
-            head -n 100 "${{ github.workspace }}/grype-results.sarif"
-          else
-            echo "grype-results.sarif not found after scan."
+          if [ ! -f "$GRYPE_OUTPUT_PATH" ]; then
+            echo "ERROR: grype-results.sarif was NOT created by Grype!"
+            exit 1
           fi
 
       - name: Upload SARIF results to GitHub Security tab (Grype)
