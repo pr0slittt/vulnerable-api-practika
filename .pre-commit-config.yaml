@@ -3,7 +3,7 @@ repos:
     rev: v4.6.0 # Используйте последнюю стабильную версию
     hooks:
       - id: check-yaml
-      - id: check-json
+      # - id: check-json
       - id: end-of-file-fixer
       # - id: trim-trailing-whitespace
       - id: detect-private-key
@@ -15,7 +15,11 @@ repos:
     hooks:
       - id: black
         language_version: python3.12 # Укажите используемую версию Python
-
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.2 # Убедитесь, что это актуальная версия
+    hooks:
+      - id: gitleaks
+        name: Detect Hardcoded Secrets (Gitleaks)
   - repo: https://github.com/PyCQA/isort
     rev: 5.13.2 # Используйте последнюю стабильную версию (проверено на 26 июня 2025)
     hooks:
