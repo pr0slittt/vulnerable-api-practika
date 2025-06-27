@@ -16,7 +16,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
-      packages: write # Добавлено для работы с Docker и Trivy
+      packages: write
 
     steps:
       - name: Checkout code
@@ -58,16 +58,17 @@ jobs:
           sarif_file: 'grype-results.sarif'
           wait-for-processing: true
 
-      - name: Install Semgrep CLI
-        run: |
-          pip install "semgrep>=1.76.0"
-          semgrep --version
-
       - name: Run Semgrep SAST Scan
-        run: |
-          semgrep --config "p/python" --config "p/security-audit" \
-            --sarif -o "${{ github.workspace }}/semgrep-results.sarif" ./app || true
-
+        uses: returntocorp/semgrep-action@v1
+        id: semgrep_scan
+        with:
+          config: |
+            p/python
+            p/security-audit
+          target: './app'
+          output: 'semgrep-results.sarif'
+          # output-format: sarif # Это не нужно для returntocorp/semgrep-action, так как SARIF является форматом по умолчанию для 'output'
+        
       - name: Upload Semgrep SARIF results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         with:
