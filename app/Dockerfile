@@ -1,8 +1,20 @@
-FROM python:2.7
-RUN apt-get update && apt-get install -y sqlite3 supervisor
-RUN pip install bottle requests lxml
-COPY vAPI.db  /var/www/api/vAPI.db
-COPY vAPI.py /var/www/api/vAPI.py
-COPY vAPI.conf /etc/supervisor/conf.d/
+# Используем официальный образ Python 3.12 (slim для уменьшения размера)
+FROM python:3.12-slim-bookworm
+
+# Устанавливаем рабочую директорию в контейнере
+WORKDIR /opt/vAPI/app
+
+# Копируем файл зависимостей в контейнер
+COPY requirements.txt .
+
+# Устанавливаем зависимости
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Копируем остальные файлы приложения
+COPY . .
+
+# Expose the port the app runs on
 EXPOSE 8081
-CMD /usr/bin/supervisord -c /etc/supervisor/supervisord.conf && tail -f /var/log/supervisor/supervisord.log
+
+# Команда для запуска приложения при запуске контейнера
+CMD ["/bin/bash", "-c", "python vAPI.py"]
