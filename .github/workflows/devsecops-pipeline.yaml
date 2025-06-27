@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: write
       security-events: write
 
     steps:
@@ -65,10 +66,34 @@ jobs:
       - name: Run Semgrep SAST Scan
         run: |
           semgrep --config "p/python" --config "p/security-audit" \
+            --config "semgrep-rules/" \
             --sarif -o "${{ github.workspace }}/semgrep-results.sarif" ./app || true
 
       - name: Upload Semgrep SARIF results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'semgrep-results.sarif'
+          wait-for-processing: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Image
+        run: |
+          docker build -t vulnerable-api:latest ./app
+
+      - name: Run Snyk Container Scan
+        uses: snyk/actions/docker@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: vulnerable-api:latest
+          args: --file=app/Dockerfile --sarif-file-output=snyk-results.sarif
+        continue-on-error: true
+
+      - name: Upload Snyk SARIF results to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: snyk-results.sarif
           wait-for-processing: true
