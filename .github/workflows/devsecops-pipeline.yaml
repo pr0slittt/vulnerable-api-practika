@@ -88,8 +88,8 @@ jobs:
           image-ref: 'vulnerable-api:latest'
           format: 'sarif'
           output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN' # Включаем все степени серьезности для более полного отчета
-          ignore-unfixed: false # Включаем уязвимости, для которых нет исправлений, чтобы отчет был максимально полным
+          severity: 'HIGH,CRITICAL' # Возвращено к предыдущим значениям
+          ignore-unfixed: true # Возвращено к предыдущим значениям
         continue-on-error: true
 
       - name: Upload Trivy SARIF results to GitHub Security
