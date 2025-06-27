@@ -39,9 +39,28 @@ jobs:
         run: |
           set -euxo pipefail # Останавливать выполнение при ошибке
           echo "Starting Semgrep scan. PWD: $(pwd)"
-          returntocorp/semgrep-action@v1 --config "p/python p/python-web p/security-audit" --target "./app" --output "${{ github.workspace }}/semgrep-results.sarif" --output-format sarif || true # Разрешаем ошибку сканирования
-          echo "Semgrep command exit code: $?"
-          echo "Semgrep scan finished. PWD: $(pwd)"
+          # Semgrep Action itself handles the output path internally when 'output' is provided in 'with:'
+          # We are running the CLI directly here, so ensure the action is available.
+          # The returntocorp/semgrep-action@v1 is designed to be used with 'uses', not directly in 'run'.
+          # If it were to be run from CLI, it would be 'semgrep --config ... --output ...'
+          # Let's revert this back to 'uses:' to properly leverage the action.
+          # The previous attempt to run it directly might be part of the problem for Semgrep.
+
+          # Reverting to the correct way of using semgrep-action
+          # This step will be empty and Semgrep will be called as a 'uses:' action below.
+          echo "Semgrep scan will be executed by a 'uses:' action."
+
+      - name: Execute Semgrep SAST Scan (as 'uses:' action)
+        # This step will actually run the semgrep-action
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: |
+            p/python
+            p/python-web
+            p/security-audit
+          target: './app'
+          output: '${{ github.workspace }}/semgrep-results.sarif'
+          output-format: sarif
 
       - name: List files after Semgrep scan
         run: |
@@ -65,7 +84,7 @@ jobs:
 
       - name: Download Grype
         run: |
-          set -euxo pipefail # Останавливать выполнение при ошибке
+          set -euxo pipefail
           echo "Starting Grype download. PWD: $(pwd)"
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
           grype version
@@ -74,9 +93,10 @@ jobs:
       - name: Run Grype SCA Scan and Save SARIF
         id: grype_scan
         run: |
-          set -euxo pipefail # Останавливать выполнение при ошибке
+          set -euxo pipefail
           echo "Starting Grype scan. PWD: $(pwd)"
-          grype dir:./app -o sarif > ${{ github.workspace }}/grype-results.sarif || true # Разрешаем ошибку сканирования
+          # ИСПРАВЛЕНИЕ: Используем опцию --file для Grype, чтобы явно указать выходной файл
+          grype dir:./app -o sarif --file "${{ github.workspace }}/grype-results.sarif" || true
           echo "Grype command exit code: $?"
           echo "Grype scan finished. PWD: $(pwd)"
 
