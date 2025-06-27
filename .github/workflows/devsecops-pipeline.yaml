@@ -40,14 +40,22 @@ jobs:
             p/python-web
             p/security-audit
           target: './app'
-          output: '${{ github.workspace }}/semgrep-results.sarif' # <-- ИСПРАВЛЕНИЕ: Абсолютный путь
+          output: '${{ github.workspace }}/semgrep-results.sarif' # Убедитесь, что это записывает в корень
           output-format: sarif
+
+      - name: List files after Semgrep scan
+        run: |
+          echo "Listing files in ${{ github.workspace }}:"
+          ls -l ${{ github.workspace }} # <-- КЛЮЧЕВОЙ ШАГ ОТЛАДКИ
+          echo "Listing files recursively in ${{ github.workspace }}:"
+          ls -lR ${{ github.workspace }} # <-- Добавлено для более глубокой проверки
 
       - name: Upload Semgrep SARIF results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'semgrep-results.sarif' # <-- Ищем в корне
+          sarif_file: 'semgrep-results.sarif' # Ищем в корне рабочей директории
           wait-for-processing: true
+          # checkout_path: удалено, так как не требуется для относительного sarif_file
 
       - name: Download Grype
         run: |
@@ -56,12 +64,20 @@ jobs:
 
       - name: Run Grype SCA Scan and Save SARIF
         run: |
-          # Grype будет сканировать папку 'app', а SARIF будет создан в корневом каталоге Workspace
+          # Grype будет сканировать папку 'app', а вывод SARIF будет перенаправлен в файл в корне
           grype dir:./app -o sarif > ${{ github.workspace }}/grype-results.sarif || true
+
+      - name: List files after Grype scan
+        run: |
+          echo "Listing files in ${{ github.workspace }}:"
+          ls -l ${{ github.workspace }} # <-- КЛЮЧЕВОЙ ШАГ ОТЛАДКИ
+          echo "Listing files recursively in ${{ github.workspace }}:"
+          ls -lR ${{ github.workspace }} # <-- Добавлено для более глубокой проверки
 
       - name: Upload SARIF results to GitHub Security tab (Grype)
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'grype-results.sarif' # <-- Ищем в корне
+          sarif_file: 'grype-results.sarif' # Ищем в корне рабочей директории
           wait-for-processing: true
+          # checkout_path: удалено, так как не требуется для относительного sarif_file
