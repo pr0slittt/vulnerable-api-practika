@@ -42,23 +42,8 @@ jobs:
             --target ./app
             --output semgrep-results.sarif
             --output-format sarif
-        continue-on-error: true
-
-      - name: List files after Semgrep scan
-        run: |
-          echo "Listing files in ${{ github.workspace }}:"
-          ls -l ${{ github.workspace }}
-          echo "Listing files recursively in ${{ github.workspace }}:"
-          ls -lR ${{ github.workspace }}
-          if [ -f "${{ github.workspace }}/semgrep-results.sarif" ]; then
-            echo "semgrep-results.sarif content (first 100 lines):"
-            head -n 100 "${{ github.workspace }}/semgrep-results.sarif"
-          else
-            echo "semgrep-results.sarif not found after scan."
-          fi
 
       - name: Upload Semgrep SARIF results to GitHub Security
-        if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'semgrep-results.sarif'
