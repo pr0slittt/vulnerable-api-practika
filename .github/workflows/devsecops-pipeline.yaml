@@ -172,27 +172,21 @@ jobs:
       - name: Start Vulnerable API (vAPI.py) in background
         run: |
           echo "Starting vAPI.py in background..."
-          # Запускаем vAPI.py из папки app.
-          # nohup позволяет процессу продолжать работать после завершения скрипта bash.
-          # > vapi_output.log 2>&1 & перенаправляет stdout и stderr в файл и запускает в фоновом режиме.
           nohup python ./app/vAPI.py > vapi_output.log 2>&1 &
-          VAPI_PID=$! # Сохраняем PID фонового процесса
+          VAPI_PID=$!
           echo "vAPI.py started with PID: $VAPI_PID"
-          echo "$VAPI_PID" > vapi_pid.txt # Сохраняем PID в файл для последующей остановки
+          echo "$VAPI_PID" > vapi_pid.txt
           echo "Waiting for vAPI.py to start (10 seconds)..."
-          sleep 10 # Даем API время для запуска
+          sleep 10
 
       - name: Run OWASP ZAP Full Scan
         id: zap_scan
         uses: zaproxy/action-full-scan@v0.12.0
         with:
-          target: 'http://localhost:8081' # Цель сканирования - локально запущенное API
-          # sarif_file_name: 'owasp-zap-results.sarif' # Параметр, который должен был работать
-          # cmd_options: '-s /zap/wrk/owasp-zap-results.sarif'
-          # Используем cmd_options для явного указания генерации SARIF-отчета
-          # '/zap/wrk/' - это монтированная папка, которая соответствует ${{ github.workspace }}
-          cmd_options: '-J report_json.json -w report_md.md -r report_html.html -s /zap/wrk/owasp-zap-results.sarif'
-        continue-on-error: true # Позволяем пайплайну продолжаться, даже если ZAP найдет уязвимости
+          target: 'http://localhost:8081'
+          sarif_file_name: 'owasp-zap-results.sarif' # Восстановлено: использование параметра sarif_file_name
+          # Удалено: cmd_options, так как он, похоже, конфликтовал с sarif_file_name
+        continue-on-error: true
 
       - name: List files after ZAP scan
         run: |
@@ -208,7 +202,7 @@ jobs:
           fi
 
       - name: Upload OWASP ZAP SARIF results to GitHub Security
-        if: always() # Всегда пытаться загрузить SARIF
+        if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'owasp-zap-results.sarif'
@@ -222,24 +216,23 @@ jobs:
           retention-days: 5
 
       - name: Stop Vulnerable API (Cleanup)
-        if: always() # Выполнять всегда, даже если предыдущие шаги завершились неудачно
+        if: always()
         run: |
           if [ -f vapi_pid.txt ]; then
             VAPI_PID=$(cat vapi_pid.txt)
             echo "Stopping vAPI.py with PID: $VAPI_PID"
-            kill $VAPI_PID || true # Попытка мягкой остановки
-            sleep 2 # Даем время на остановку
-            if ps -p $VAPI_PID > /dev/null; then # Проверяем, все еще ли процесс запущен
+            kill $VAPI_PID || true
+            sleep 2
+            if ps -p $VAPI_PID > /dev/null; then
               echo "Process $VAPI_PID is still running, forcing kill."
-              kill -9 $VAPI_PID || true # Принудительная остановка
+              kill -9 $VAPI_PID || true
             else
               echo "Process $VAPI_PID stopped successfully."
             fi
-            rm vapi_pid.txt # Удаляем файл PID
+            rm vapi_pid.txt
           else
             echo "vapi_pid.txt not found, possibly vAPI.py was not started or already stopped."
           fi
-          # Выводим содержимое лог-файла API для отладки
           if [ -f vapi_output.log ]; then
             echo "--- vAPI.py Output Log ---"
             cat vapi_output.log
