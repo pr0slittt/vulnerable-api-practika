@@ -185,7 +185,7 @@ jobs:
           path: trivy-results.sarif
           retention-days: 5
 
-      # --- НАЧАЛО: Интеграция OWASP ZAP DAST ---
+      # --- НАЧАЛО: Интеграция OWASP ZAP DAST (через Docker) ---
       - name: Start Vulnerable API (vAPI.py) in background
         run: |
           echo "Starting vAPI.py in background..."
@@ -212,72 +212,65 @@ jobs:
             fi
           done
 
-      - name: Log in to Docker Hub (Optional, for public image resilience)
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }} # Рекомендуется использовать секрет
-          password: ${{ secrets.DOCKERHUB_TOKEN }} # Рекомендуется использовать секрет
-        continue-on-error: true # Позволяем пайплайну продолжать, даже если вход не удался
-
-      - name: Create ZAP Reports Directory
-        run: mkdir -p zap-reports # Создаем директорию для отчетов ZAP
-
-      - name: Run OWASP ZAP Baseline Scan (GitHub Action)
-        id: run_owasp_zap_scan
-        uses: zaproxy/action-baseline@v0.13.0
-        with:
-          target: 'http://localhost:8081' # Целевой URL вашего приложения
-          sarif_output: true # Явно включаем вывод SARIF
-          sarif_file_name: 'zap-baseline-report.sarif' # Указываем имя SARIF файла
-          output_dir: 'zap-reports' # Явно указываем директорию для всех отчетов ZAP
-          # HTML/JSON отчеты по умолчанию будут созданы как report_html.html и report_json.json в указанной директории
-          artifact_name: 'zap-action-artifacts' # Изменено имя артефакта, чтобы избежать конфликтов
-        continue-on-error: true # Позволяем пайплайну продолжать, даже если ZAP найдет уязвимости
+      - name: Run OWASP ZAP Baseline Scan (Docker)
+        run: |
+          echo "Running OWASP ZAP Baseline Scan via Docker..."
+          # Запускаем ZAP Docker-образ, монтируя текущую рабочую директорию.
+          # Отчеты будут созданы непосредственно в корневой директории рабочего пространства.
+          docker run --rm -v $(pwd):/zap/wrk/:rw owasp/zap2docker-stable \
+            zap-baseline.py \
+            -t http://localhost:8081 \
+            -J /zap/wrk/report_json.json \
+            -H /zap/wrk/report_html.html \
+            -r /zap/wrk/zap-baseline-report.sarif \
+            || true # Разрешаем команде завершиться с ошибкой, если ZAP найдет уязвимости (для продолжения пайплайна)
+          
+          echo "ZAP scan finished."
 
       - name: List files after ZAP scan and check for SARIF
         run: |
-          echo "Listing files in the zap-reports/ directory:"
-          ls -l ${{ github.workspace }}/zap-reports/
+          echo "Listing files in current workspace (now should contain zap-baseline-report.sarif and other ZAP reports):"
+          ls -l ${{ github.workspace }}
           
-          SARIF_FILE_PATH="${{ github.workspace }}/zap-reports/zap-baseline-report.sarif"
-          HTML_FILE_PATH="${{ github.workspace }}/zap-reports/report_html.html"
-          JSON_FILE_PATH="${{ github.workspace }}/zap-reports/report_json.json"
+          SARIF_FILE="zap-baseline-report.sarif"
+          HTML_FILE="report_html.html"
+          JSON_FILE="report_json.json"
 
-          if [ -f "$SARIF_FILE_PATH" ]; then
-            echo "$SARIF_FILE_PATH found."
-            echo "Content of $SARIF_FILE_PATH (first 100 lines):"
-            head -n 100 "$SARIF_FILE_PATH"
+          if [ -f "$SARIF_FILE" ]; then
+            echo "$SARIF_FILE found in workspace root."
+            echo "Content of $SARIF_FILE (first 100 lines):"
+            head -n 100 "$SARIF_FILE"
           else
-            echo "zap-baseline-report.sarif NOT FOUND in zap-reports/. This is an error."
+            echo "$SARIF_FILE NOT FOUND in workspace root. This is an error."
             exit 1 # Fail the workflow if SARIF is not found here
           fi
 
-          if [ -f "$HTML_FILE_PATH" ]; then
-            echo "$HTML_FILE_PATH found."
+          if [ -f "$HTML_FILE" ]; then
+            echo "$HTML_FILE found."
           else
-            echo "$HTML_FILE_PATH NOT FOUND."
+            echo "$HTML_FILE NOT FOUND."
           fi
-          if [ -f "$JSON_FILE_PATH" ]; then
-            echo "$JSON_FILE_PATH found."
+          if [ -f "$JSON_FILE" ]; then
+            echo "$JSON_FILE found."
           else
-            echo "$JSON_FILE_PATH NOT FOUND."
+            echo "$JSON_FILE NOT FOUND."
           fi
 
       - name: Upload ZAP SARIF results to GitHub Security
         if: always() && success()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'zap-reports/zap-baseline-report.sarif' # Указываем путь к файлу в новой директории
+          sarif_file: 'zap-baseline-report.sarif' # Файл SARIF ожидается в корневой директории
           wait-for-processing: true
 
       - name: Upload ZAP HTML/JSON Reports as Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ZAP-HTML-JSON-Reports # Уникальное имя артефакта
+          name: ZAP-HTML-JSON-Reports
           path: |
-            zap-reports/report_html.html # Указываем путь к файлу в новой директории
-            zap-reports/report_json.json # Указываем путь к файлу в новой директории
+            report_html.html # Файл HTML ожидается в корневой директории
+            report_json.json # Файл JSON ожидается в корневой директории
           retention-days: 5 # Хранить артефакт 5 дней
 
       - name: Stop Vulnerable API (Cleanup)
@@ -303,4 +296,4 @@ jobs:
             cat vapi_output.log # Выводим лог работы API для отладки
             echo "--- End of vAPI.py Output Log ---"
           fi
-      # --- КОНЕЦ: Интеграция OWASP ZAP DAST ---
+      # --- КОНЕЦ: Интеграция OWASP ZAP DAST (через Docker) ---
