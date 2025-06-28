@@ -183,6 +183,7 @@ jobs:
         with:
           target: 'http://localhost:8081'
           sarif_file_name: 'owasp-zap-results.sarif'
+          cmd_options: '-s owasp-zap-results.sarif' # <-- ДОБАВЛЕНО: Явно указываем ZAP генерировать SARIF
         continue-on-error: true
 
       - name: List files after ZAP scan
