@@ -9,41 +9,105 @@ on:
 jobs:
   security-scan:
     runs-on: ubuntu-latest
+    services:
+      vulnerable-api:
+        # Собираем твой Dockerfile из репозитория
+        build:
+          context: .
+        ports:
+          - 8081:8081
+        options: >-
+          --health-cmd="curl --fail http://localhost:8081 || exit 1"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Build vulnerable-api Docker image
-        run: docker build -t vulnerable-api-practika:latest .
-
-      - name: Create docker network
+      - name: Wait for vulnerable API service to be healthy
         run: |
-          docker network create zap-net || true
-
-      - name: Run vulnerable-api container
-        run: |
-          docker run -d --name vulnerable-api --network zap-net -p 8081:8081 vulnerable-api-practika:latest
-
-      - name: Wait for vulnerable-api service to start
-        run: |
+          echo "Waiting for vulnerable API to be ready..."
           for i in {1..20}; do
-            if curl --silent --fail http://localhost:8081; then
-              echo "Service is up!"
+            if curl --fail http://localhost:8081; then
+              echo "API is up!"
               exit 0
+            else
+              echo "API is not up yet. Waiting..."
+              sleep 5
             fi
-            echo "Waiting for service..."
-            sleep 5
           done
-          echo "Service did not start in time"
+          echo "API failed to start in time"
           exit 1
 
       - name: Run OWASP ZAP Baseline Scan
         run: |
-          docker run --rm --network zap-net -v ${{ github.workspace }}:/zap/wrk/:rw ghcr.io/zaproxy/zap2docker-stable zap-baseline.py \
+          docker network create zap-net || true
+          docker network connect zap-net ${{ job.services.vulnerable-api.id }}
+
+          docker run --rm --network zap-net -v ${{ github.workspace }}:/zap/wrk/:rw owasp/zap2docker-stable zap-baseline.py \
             -t http://vulnerable-api:8081 \
             -J zap-report.json
 
-      # Конвертация и загрузка SARIF тут (можно вставить твой Python скрипт и шаг upload-sarif)
-      
-      - name: Stop vulnerable-api container
-        run: docker stop vulnerable-api
+      - name: Convert ZAP JSON to SARIF
+        run: |
+          python3 <<EOF
+          import json
+          def convert_zap_json_to_sarif(zap_json_path, sarif_path):
+              with open(zap_json_path) as f:
+                  zap_data = json.load(f)
+
+              sarif = {
+                  "version": "2.1.0",
+                  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+                  "runs": [{
+                      "tool": {"driver": {
+                          "name": "OWASP ZAP",
+                          "informationUri": "https://www.zaproxy.org/",
+                          "rules": []
+                      }},
+                      "results": []
+                  }]
+              }
+              rules = {}
+              results = []
+
+              for alert in zap_data.get("alerts", []):
+                  rule_id = alert.get("alertId", alert.get("alert", "Unknown"))
+                  if rule_id not in rules:
+                      rules[rule_id] = {
+                          "id": rule_id,
+                          "name": alert.get("alert", ""),
+                          "shortDescription": {"text": alert.get("alert", "")},
+                          "helpUri": alert.get("reference", ""),
+                          "properties": {"tags": ["security", "zap"]}
+                      }
+                  for instance in alert.get("instances", []):
+                      location = {
+                          "physicalLocation": {
+                              "artifactLocation": {"uri": instance.get("uri", "")},
+                              "region": {"startLine": 1}
+                          }
+                      }
+                      results.append({
+                          "ruleId": rule_id,
+                          "message": {"text": alert.get("description", "")},
+                          "locations": [location],
+                          "level": "warning"
+                      })
+
+              sarif["runs"][0]["tool"]["driver"]["rules"] = list(rules.values())
+              sarif["runs"][0]["results"] = results
+
+              with open(sarif_path, "w") as f:
+                  json.dump(sarif, f, indent=2)
+
+          convert_zap_json_to_sarif("zap-report.json", "zap-report.sarif")
+          EOF
+
+      - name: Upload ZAP SARIF report
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: zap-report.sarif
+          token: ${{ secrets.GITHUB_TOKEN }}
