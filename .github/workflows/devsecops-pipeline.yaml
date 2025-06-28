@@ -228,22 +228,34 @@ jobs:
         with:
           target: 'http://localhost:8081' # Целевой URL вашего приложения
           sarif_output: true # Явно включаем вывод SARIF
-          # sarif_file_name: 'zap-baseline-report.sarif' # УДАЛЕНО: Используем имя по умолчанию
+          sarif_file_name: 'zap-baseline-report.sarif' # Указываем имя SARIF файла
           # HTML/JSON отчеты по умолчанию будут созданы как report_html.html и report_json.json в корне
           artifact_name: 'zap-action-artifacts' # Изменено имя артефакта, чтобы избежать конфликтов
         continue-on-error: true # Позволяем пайплайну продолжать, даже если ZAP найдет уязвимости
 
-      - name: List files after ZAP scan
+      - name: List files after ZAP scan and check for SARIF
         run: |
-          echo "Listing files in current workspace (now should contain zap-baseline.sarif and other ZAP reports):"
+          echo "Listing files in current workspace (now should contain zap-baseline-report.sarif and other ZAP reports):"
           ls -l ${{ github.workspace }}
-          if [ -f "zap-baseline.sarif" ]; then # ОБНОВЛЕНО: Проверяем zap-baseline.sarif
-            echo "zap-baseline.sarif content (first 100 lines):"
-            head -n 100 "zap-baseline.sarif"
+          
+          SARIF_FILE_ROOT="zap-baseline-report.sarif"
+          SARIF_FILE_ZAP_RESULTS="zap-results/zap-baseline-report.sarif" # Проверяем также в zap-results
+
+          if [ -f "$SARIF_FILE_ROOT" ]; then
+            echo "$SARIF_FILE_ROOT found in workspace root."
+            echo "Content of $SARIF_FILE_ROOT (first 100 lines):"
+            head -n 100 "$SARIF_FILE_ROOT"
+          elif [ -f "$SARIF_FILE_ZAP_RESULTS" ]; then
+            echo "$SARIF_FILE_ROOT NOT FOUND in workspace root, but found in $SARIF_FILE_ZAP_RESULTS."
+            echo "Moving $SARIF_FILE_ZAP_RESULTS to workspace root..."
+            mv "$SARIF_FILE_ZAP_RESULTS" "$SARIF_FILE_ROOT"
+            echo "Content of $SARIF_FILE_ROOT (first 100 lines after move):"
+            head -n 100 "$SARIF_FILE_ROOT"
           else
-            echo "zap-baseline.sarif NOT FOUND in workspace root. This is an error."
-            exit 1 # Fail the workflow if SARIF is not found here
+            echo "zap-baseline-report.sarif NOT FOUND in workspace root or zap-results/. This is an error."
+            exit 1 # Провалить рабочий процесс, если SARIF здесь не найден
           fi
+
           if [ -f "report_html.html" ]; then
             echo "report_html.html found."
           else
@@ -259,7 +271,7 @@ jobs:
         if: always() && success()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'zap-baseline.sarif' # ОБНОВЛЕНО: Используем zap-baseline.sarif
+          sarif_file: 'zap-baseline-report.sarif' # Теперь файл ожидается в корневой директории
           wait-for-processing: true
 
       - name: Upload ZAP HTML/JSON Reports as Artifact
