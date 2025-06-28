@@ -219,8 +219,8 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }} # Рекомендуется использовать секрет
         continue-on-error: true # Позволяем пайплайну продолжать, даже если вход не удался
 
-      - name: Create ZAP Reports Directory (No longer strictly needed for `zap-results/` but good practice)
-        run: mkdir -p zap-results # Создаем директорию для отчетов ZAP
+      - name: Create ZAP Reports Directory
+        run: mkdir -p zap-reports # Создаем директорию для отчетов ZAP
 
       - name: Run OWASP ZAP Baseline Scan (GitHub Action)
         id: run_owasp_zap_scan
@@ -229,49 +229,45 @@ jobs:
           target: 'http://localhost:8081' # Целевой URL вашего приложения
           sarif_output: true # Явно включаем вывод SARIF
           sarif_file_name: 'zap-baseline-report.sarif' # Указываем имя SARIF файла
-          # HTML/JSON отчеты по умолчанию будут созданы как report_html.html и report_json.json в корне
+          output_dir: 'zap-reports' # Явно указываем директорию для всех отчетов ZAP
+          # HTML/JSON отчеты по умолчанию будут созданы как report_html.html и report_json.json в указанной директории
           artifact_name: 'zap-action-artifacts' # Изменено имя артефакта, чтобы избежать конфликтов
         continue-on-error: true # Позволяем пайплайну продолжать, даже если ZAP найдет уязвимости
 
       - name: List files after ZAP scan and check for SARIF
         run: |
-          echo "Listing files in current workspace (now should contain zap-baseline-report.sarif and other ZAP reports):"
-          ls -l ${{ github.workspace }}
+          echo "Listing files in the zap-reports/ directory:"
+          ls -l ${{ github.workspace }}/zap-reports/
           
-          SARIF_FILE_ROOT="zap-baseline-report.sarif"
-          SARIF_FILE_ZAP_RESULTS="zap-results/zap-baseline-report.sarif" # Проверяем также в zap-results
+          SARIF_FILE_PATH="${{ github.workspace }}/zap-reports/zap-baseline-report.sarif"
+          HTML_FILE_PATH="${{ github.workspace }}/zap-reports/report_html.html"
+          JSON_FILE_PATH="${{ github.workspace }}/zap-reports/report_json.json"
 
-          if [ -f "$SARIF_FILE_ROOT" ]; then
-            echo "$SARIF_FILE_ROOT found in workspace root."
-            echo "Content of $SARIF_FILE_ROOT (first 100 lines):"
-            head -n 100 "$SARIF_FILE_ROOT"
-          elif [ -f "$SARIF_FILE_ZAP_RESULTS" ]; then
-            echo "$SARIF_FILE_ROOT NOT FOUND in workspace root, but found in $SARIF_FILE_ZAP_RESULTS."
-            echo "Moving $SARIF_FILE_ZAP_RESULTS to workspace root..."
-            mv "$SARIF_FILE_ZAP_RESULTS" "$SARIF_FILE_ROOT"
-            echo "Content of $SARIF_FILE_ROOT (first 100 lines after move):"
-            head -n 100 "$SARIF_FILE_ROOT"
+          if [ -f "$SARIF_FILE_PATH" ]; then
+            echo "$SARIF_FILE_PATH found."
+            echo "Content of $SARIF_FILE_PATH (first 100 lines):"
+            head -n 100 "$SARIF_FILE_PATH"
           else
-            echo "zap-baseline-report.sarif NOT FOUND in workspace root or zap-results/. This is an error."
-            exit 1 # Провалить рабочий процесс, если SARIF здесь не найден
+            echo "zap-baseline-report.sarif NOT FOUND in zap-reports/. This is an error."
+            exit 1 # Fail the workflow if SARIF is not found here
           fi
 
-          if [ -f "report_html.html" ]; then
-            echo "report_html.html found."
+          if [ -f "$HTML_FILE_PATH" ]; then
+            echo "$HTML_FILE_PATH found."
           else
-            echo "report_html.html NOT FOUND in workspace root."
+            echo "$HTML_FILE_PATH NOT FOUND."
           fi
-          if [ -f "report_json.json" ]; then
-            echo "report_json.json found."
+          if [ -f "$JSON_FILE_PATH" ]; then
+            echo "$JSON_FILE_PATH found."
           else
-            echo "report_json.json NOT FOUND in workspace root."
+            echo "$JSON_FILE_PATH NOT FOUND."
           fi
 
       - name: Upload ZAP SARIF results to GitHub Security
         if: always() && success()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'zap-baseline-report.sarif' # Теперь файл ожидается в корневой директории
+          sarif_file: 'zap-reports/zap-baseline-report.sarif' # Указываем путь к файлу в новой директории
           wait-for-processing: true
 
       - name: Upload ZAP HTML/JSON Reports as Artifact
@@ -280,8 +276,8 @@ jobs:
         with:
           name: ZAP-HTML-JSON-Reports # Уникальное имя артефакта
           path: |
-            report_html.html # Теперь файл ожидается в корневой директории
-            report_json.json # Теперь файл ожидается в корневой директории
+            zap-reports/report_html.html # Указываем путь к файлу в новой директории
+            zap-reports/report_json.json # Указываем путь к файлу в новой директории
           retention-days: 5 # Хранить артефакт 5 дней
 
       - name: Stop Vulnerable API (Cleanup)
