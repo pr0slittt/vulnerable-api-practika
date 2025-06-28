@@ -2,13 +2,9 @@ name: DevSecOps Pipeline
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
   pull_request:
-    branches:
-      - main
-      - master
+    branches: [main, master]
 
 jobs:
   build-and-scan:
@@ -17,273 +13,164 @@ jobs:
       contents: read
       security-events: write
       packages: write
-      issues: write
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
 
-      - name: Install Semgrep CLI
-        run: |
-          set -euxo pipefail
-          if ! command -v semgrep &> /dev/null
-          then
-              echo "Semgrep not found, installing..."
-              pip install "semgrep>=1.76.0"
-          else
-              echo "Semgrep already installed."
+    - name: Install Semgrep CLI
+      run: |
+        pip install "semgrep>=1.76.0"
+        semgrep --version
+
+    - name: Run Semgrep SAST Scan
+      id: semgrep_scan_run
+      run: |
+        echo "Starting Semgrep CLI scan"
+        SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
+        semgrep \
+          --config "p/python" \
+          --config "p/security-audit" \
+          --config "semgrep-rules/" \
+          --sarif -o "$SARIF_OUTPUT_PATH" \
+          ./app \
+          --verbose || true
+        echo "semgrep_exit_code=$?" >> "$GITHUB_OUTPUT"
+
+    - name: Upload Semgrep SARIF results to GitHub Security
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'semgrep-results.sarif'
+        wait-for-processing: true
+
+    - name: Upload Semgrep SARIF as Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: semgrep-sarif-report
+        path: semgrep-results.sarif
+        retention-days: 5
+
+    - name: Cache Grype DB
+      uses: actions/cache@v3
+      with:
+        path: ~/.grype/db
+        key: ${{ runner.os }}-grype-db-${{ hashFiles('grype-db-version.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-grype-db-
+
+    - name: Create Grype DB Version File
+      run: echo "1" > grype-db-version.txt
+
+    - name: Download Grype
+      run: |
+        curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
+        grype version
+
+    - name: Run Grype SCA Scan and Save SARIF
+      id: grype_scan_run
+      run: |
+        GRYPE_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
+        grype dir:./app -o sarif --file "$GRYPE_OUTPUT_PATH" || true
+        echo "grype_exit_code=$?" >> "$GITHUB_OUTPUT"
+
+    - name: Upload SARIF results to GitHub Security tab (Grype)
+      if: always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'grype-results.sarif'
+        wait-for-processing: true
+
+    - name: Upload Grype SARIF as Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: grype-sarif-report
+        path: grype-results.sarif
+        retention-days: 5
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker Image
+      run: |
+        docker build -t vulnerable-api:latest .
+
+    - name: Run Trivy Container Scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'vulnerable-api:latest'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'HIGH,CRITICAL'
+        ignore-unfixed: true
+      continue-on-error: true
+
+    - name: Upload Trivy SARIF results to GitHub Security
+      if: always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'trivy-results.sarif'
+        wait-for-processing: true
+
+    - name: Upload Trivy SARIF as Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: trivy-sarif-report
+        path: trivy-results.sarif
+        retention-days: 5
+
+    # ✅ OWASP ZAP — Start vulnerable app and scan it
+
+    - name: Run vulnerable container for ZAP scanning
+      run: |
+        docker run -d --name vulnerable-api-zap -p 8081:80 vulnerable-api:latest
+
+    - name: Wait for app to be ready (ZAP target)
+      run: |
+        echo "Waiting for http://localhost:8081 to become available..."
+        for i in {1..30}; do
+          if curl -s http://localhost:8081 > /dev/null; then
+            echo "Target app is up!"
+            break
           fi
-          semgrep --version
+          echo "Waiting... ($i)"
+          sleep 3
+        done
 
-      - name: Run Semgrep SAST Scan
-        id: semgrep_scan_run
-        run: |
-          set -euxo pipefail
-          echo "Starting Semgrep CLI scan. PWD: $(pwd)"
-          
-          echo "Listing files in current directory (should contain semgrep-rules/):"
-          ls -l .
-          echo "Listing files in app/ directory:"
-          ls -l ./app
+    - name: Run OWASP ZAP Baseline Scan via Docker
+      run: |
+        echo "Starting OWASP ZAP Baseline Scan"
+        docker run --network="host" -v $(pwd):/zap/wrk/:rw -t owasp/zap2docker-stable zap-baseline.py \
+          -t http://localhost:8081 \
+          -J report_json.json \
+          -H report_html.html \
+          -r zap-baseline-report.sarif
 
-          SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
-          echo "Semgrep output path set to: $SARIF_OUTPUT_PATH"
+    - name: Upload ZAP SARIF report to GitHub Security
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'zap-baseline-report.sarif'
+        wait-for-processing: true
 
-          semgrep \
-            --config "p/python" \
-            --config "p/security-audit" \
-            --config "semgrep-rules/" \
-            --sarif \
-            -o "$SARIF_OUTPUT_PATH" \
-            ./app \
-            --verbose || true
-          
-          SEMGREP_EXIT_CODE=$?
-          echo "Semgrep scan finished. Raw exit code: $SEMGREP_EXIT_CODE"
-          
-          echo "semgrep_exit_code=$SEMGREP_EXIT_CODE" >> "$GITHUB_OUTPUT"
+    - name: Upload ZAP Reports (HTML/JSON)
+      uses: actions/upload-artifact@v4
+      with:
+        name: zap-reports
+        path: |
+          report_html.html
+          report_json.json
+          zap-baseline-report.sarif
+        retention-days: 5
 
-          if [ ! -f "$SARIF_OUTPUT_PATH" ]; then
-            echo "ERROR: semgrep-results.sarif was NOT created by Semgrep!"
-            exit 1
-          else
-            echo "Semgrep SARIF file created. Size: $(du -h "$SARIF_OUTPUT_PATH" | awk '{print $1}')"
-            echo "First 100 lines of semgrep-results.sarif:"
-            head -n 100 "$SARIF_OUTPUT_PATH"
-          fi
-
-      - name: Upload Semgrep SARIF results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'semgrep-results.sarif'
-          wait-for-processing: true
-          working-directory: ${{ github.workspace }}
-
-      - name: Upload Semgrep SARIF as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: semgrep-sarif-report
-          path: semgrep-results.sarif
-          retention-days: 5
-
-      - name: Cache Grype DB
-        uses: actions/cache@v3
-        with:
-          path: ~/.grype/db
-          key: ${{ runner.os }}-grype-db-${{ hashFiles('grype-db-version.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-grype-db-
-      - name: Create Grype DB Version File
-        run: echo "1" > grype-db-version.txt
-
-      - name: Download Grype
-        run: |
-          set -euxo pipefail
-          if ! command -v grype &> /dev/null
-          then
-              echo "Grype not found, downloading..."
-              curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
-          else
-              echo "Grype binary already exists."
-          fi
-          grype version
-
-      - name: Run Grype SCA Scan and Save SARIF
-        id: grype_scan_run
-        run: |
-          set -euxo pipefail
-          echo "Starting Grype scan. PWD: $(pwd)"
-          GRYPE_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
-          echo "Grype output path set to: $GRYPE_OUTPUT_PATH"
-          grype dir:./app -o sarif --file "$GRYPE_OUTPUT_PATH" || true
-          
-          GRYPE_EXIT_CODE=$?
-          echo "Grype scan finished. Raw exit code: $GRYPE_EXIT_CODE"
-          echo "grype_exit_code=$GRYPE_EXIT_CODE" >> "$GITHUB_OUTPUT"
-
-          if [ ! -f "$GRYPE_OUTPUT_PATH" ]; then
-            echo "ERROR: grype-results.sarif was NOT created by Grype!"
-            exit 1
-          fi
-
-      - name: Upload SARIF results to GitHub Security tab (Grype)
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'grype-results.sarif'
-          wait-for-processing: true
-          working-directory: ${{ github.workspace }}
-
-      - name: Upload Grype SARIF as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: grype-sarif-report
-          path: grype-results.sarif
-          retention-days: 5
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker Image
-        run: |
-          docker build -t vulnerable-api:latest .
-
-      - name: Run Trivy Container Scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'vulnerable-api:latest'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'HIGH,CRITICAL'
-          ignore-unfixed: true
-        continue-on-error: true
-
-      - name: Upload Trivy SARIF results to GitHub Security
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-results.sarif'
-          wait-for-processing: true
-
-      - name: Upload Trivy SARIF as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-sarif-report
-          path: trivy-results.sarif
-          retention-days: 5
-
-      - name: Install OWASP ZAP
-        run: |
-          echo "Installing OWASP ZAP via snap..."
-          sudo snap install zaproxy --classic
-          echo "OWASP ZAP installed."
-
-      - name: Start Vulnerable API (vAPI.py) in background
-        run: |
-          echo "Starting vAPI.py in background..."
-          nohup python ./app/vAPI.py > vapi_output.log 2>&1 &
-          VAPI_PID=$!
-          echo "vAPI.py started with PID: $VAPI_PID"
-          echo "$VAPI_PID" > vapi_pid.txt
-          echo "Waiting for vAPI.py to be accessible at http://localhost:8081..."
-          for i in $(seq 1 30); do
-            if curl --output /dev/null --silent --head --fail http://localhost:8081; then
-              echo "vAPI.py is up and running!"
-              break
-            else
-              echo "vAPI.py not yet available, waiting 5 seconds... (Attempt $i/30)"
-              sleep 5
-            fi
-            if [ $i -eq 30 ]; then
-              echo "ERROR: vAPI.py did not start within the expected time. Check vapi_output.log for details."
-              cat vapi_output.log
-              exit 1
-            fi
-          done
-
-      - name: Run OWASP ZAP Baseline Scan (Direct Install)
-        run: |
-          echo "Running OWASP ZAP Baseline Scan via direct install..."
-          # Проверяем наличие zap-baseline.py в /snap/bin/
-          echo "Listing contents of /snap/bin/:"
-          ls -l /snap/bin/
-          echo "--- End of /snap/bin/ listing ---"
-          
-          # `zap-baseline.py` должен быть доступен в PATH после установки snap zaproxy
-          /snap/bin/zap-baseline.py \
-            -t http://localhost:8081 \
-            -J report_json.json \
-            -H report_html.html \
-            -r zap-baseline-report.sarif
-          
-          # Захватываем код выхода последней команды (zap-baseline.py)
-          ZAP_EXIT_CODE=$?
-          echo "ZAP Baseline script exited with code: $ZAP_EXIT_CODE"
-          
-          echo "Listing files in current directory after ZAP scan:"
-          ls -l
-          
-          echo "ZAP scan finished."
-
-      - name: List files after ZAP scan and check for SARIF
-        run: |
-          echo "Listing files in current workspace (now should contain zap-baseline-report.sarif and other ZAP reports):"
-          ls -l ${{ github.workspace }}
-          
-          SARIF_FILE="zap-baseline-report.sarif"
-          HTML_FILE="report_html.html"
-          JSON_FILE="report_json.json"
-
-          if [ -f "$SARIF_FILE" ]; then
-            echo "$SARIF_FILE found in workspace root."
-            echo "Content of $SARIF_FILE (first 100 lines):"
-            head -n 100 "$SARIF_FILE"
-          else
-            echo "$SARIF_FILE NOT FOUND in workspace root. This is an error."
-            exit 1
-          fi
-
-          if [ -f "$HTML_FILE" ]; then
-            echo "$HTML_FILE found."
-          else
-            echo "$HTML_FILE NOT FOUND."
-          fi
-          if [ -f "$JSON_FILE" ]; then
-            echo "$JSON_FILE found."
-          else
-            echo "$JSON_FILE NOT FOUND."
-          fi
-
-      - name: Stop Vulnerable API (Cleanup)
-        if: always()
-        run: |
-          if [ -f vapi_pid.txt ]; then
-            VAPI_PID=$(cat vapi_pid.txt)
-            echo "Stopping vAPI.py with PID: $VAPI_PID"
-            kill $VAPI_PID || true
-            sleep 2
-            if ps -p $VAPI_PID > /dev/null; then
-              echo "Process $VAPI_PID is still running, forcing kill."
-              kill -9 $VAPI_PID || true
-            else
-              echo "Process $VAPI_PID stopped successfully."
-            fi
-            rm vapi_pid.txt
-          else
-            echo "vapi_pid.txt not found, possibly vAPI.py was not started or already stopped."
-          fi
-          if [ -f vapi_output.log ]; then
-            echo "--- vAPI.py Output Log ---"
-            cat vapi_output.log
-            echo "--- End of vAPI.py Output Log ---"
-          fi
+    - name: Stop and remove vulnerable container
+      if: always()
+      run: docker rm -f vulnerable-api-zap
