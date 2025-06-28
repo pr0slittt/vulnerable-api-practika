@@ -214,8 +214,14 @@ jobs:
           echo "Checking ZAP Action output files:"
           ls -l .
           echo "ZAP action should have created issue and uploaded SARIF to security tab if findings."
-          echo "The action's 'artifact_name' input controls a zip file of JSON/MD/HTML reports, not the SARIF for CodeQL."
           echo "The SARIF upload to GitHub Security tab is handled by 'allow_issue_writing: true' directly by the ZAP Action."
+          # Добавляем явную проверку, что ZIP-файл артефакта был или не был создан.
+          if [ -f "baseline-report.zip" ]; then
+            echo "Default ZAP baseline-report.zip artifact was created."
+          else
+            echo "Default ZAP baseline-report.zip artifact was NOT created."
+          fi
+
 
       - name: Stop Vulnerable API (Cleanup)
         if: always()
