@@ -214,6 +214,11 @@ jobs:
       - name: Run OWASP ZAP Baseline Scan (Direct Install)
         run: |
           echo "Running OWASP ZAP Baseline Scan via direct install..."
+          # Проверяем наличие zap-baseline.py в /snap/bin/
+          echo "Listing contents of /snap/bin/:"
+          ls -l /snap/bin/
+          echo "--- End of /snap/bin/ listing ---"
+          
           # `zap-baseline.py` должен быть доступен в PATH после установки snap zaproxy
           /snap/bin/zap-baseline.py \
             -t http://localhost:8081 \
