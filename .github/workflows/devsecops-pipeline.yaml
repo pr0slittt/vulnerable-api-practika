@@ -242,7 +242,7 @@ jobs:
         with:
           sarif_file: 'zap-results/zap-baseline-report.sarif' # Обновлен путь к SARIF файлу
           wait-for-processing: true
-          working-directory: ${{ github.workspace }} # Убедитесь, что этот путь актуален
+          # УДАЛЕНО: working-directory: ${{ github.workspace }} # Этот параметр не нужен и вызывает ошибку
 
       - name: Upload ZAP HTML/JSON Reports as Artifact
         if: always() # Загружаем артефакты, даже если предыдущие шаги завершились с ошибкой
