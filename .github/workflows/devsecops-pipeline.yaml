@@ -205,7 +205,7 @@ jobs:
         uses: zaproxy/action-baseline@v0.12.0
         with:
           target: 'http://localhost:8081'
-          artifact_name: 'zap-dast-reports' # Имя для ZIP-архива с отчетами ZAP (не SARIF)
+          # artifact_name: 'zap-dast-reports' # УДАЛЕНО: Этот параметр вызывает ошибку
           issue_title: ZAP Scan Baseline Report
           fail_action: false
           allow_issue_writing: true # ЭТОТ ПАРАМЕТР ЗАГРУЖАЕТ SARIF В GITHUB SECURITY И СОЗДАЕТ ISSUE
