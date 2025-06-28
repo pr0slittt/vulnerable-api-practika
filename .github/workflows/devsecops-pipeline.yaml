@@ -180,22 +180,22 @@ jobs:
           sleep 10
 
       - name: Run OWASP ZAP Baseline Scan and Save SARIF
-        id: zap_baseline_scan_run # Добавлен ID
+        id: zap_baseline_scan_run # Важно: ID этого шага
         uses: zaproxy/action-baseline@v0.12.0
         with:
           target: 'http://localhost:8081'
-          sarif_file_name: 'owasp-zap-baseline-results.sarif'
+          # sarif_file_name: 'owasp-zap-baseline-results.sarif' # Удаляем эту строку, так как мы будем использовать выходной параметр
         continue-on-error: true
 
       - name: Check ZAP SARIF file existence and content
         run: |
           set -euxo pipefail
-          SARIF_OUTPUT_PATH="${{ github.workspace }}/owasp-zap-baseline-results.sarif"
+          # Используем выходной параметр из предыдущего шага
+          SARIF_OUTPUT_PATH="${{ steps.zap_baseline_scan_run.outputs.sarif-output-path }}"
           echo "Checking ZAP SARIF output path: $SARIF_OUTPUT_PATH"
           
-          if [ ! -f "$SARIF_OUTPUT_PATH" ]; then
-            echo "ERROR: owasp-zap-baseline-results.sarif was NOT created by ZAP Baseline Scan!"
-            # Выводим дополнительную отладочную информацию
+          if [ -z "$SARIF_OUTPUT_PATH" ] || [ ! -f "$SARIF_OUTPUT_PATH" ]; then
+            echo "ERROR: owasp-zap-baseline-results.sarif was NOT created or path is empty!"
             echo "Current directory files:"
             ls -l .
             echo "Recursive listing of workspace:"
@@ -211,14 +211,16 @@ jobs:
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'owasp-zap-baseline-results.sarif'
+          # Используем выходной параметр из предыдущего шага
+          sarif_file: ${{ steps.zap_baseline_scan_run.outputs.sarif-output-path }} 
           wait-for-processing: true
 
       - name: Upload OWASP ZAP SARIF as Artifact
         uses: actions/upload-artifact@v4
         with:
           name: owasp-zap-baseline-sarif-report
-          path: owasp-zap-baseline-results.sarif
+          # Используем выходной параметр из предыдущего шага
+          path: ${{ steps.zap_baseline_scan_run.outputs.sarif-output-path }}
           retention-days: 5
 
       - name: Stop Vulnerable API (Cleanup)
