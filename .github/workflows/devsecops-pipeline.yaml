@@ -224,24 +224,24 @@ jobs:
 
       - name: Run OWASP ZAP Baseline Scan (GitHub Action)
         id: run_owasp_zap_scan
-        uses: zaproxy/action-baseline@v0.13.0 # ОБНОВЛЕНО: Использование версии 0.13.0
+        uses: zaproxy/action-baseline@v0.13.0
         with:
           target: 'http://localhost:8081' # Целевой URL вашего приложения
           sarif_output: true # Явно включаем вывод SARIF
-          sarif_file_name: 'zap-baseline-report.sarif' # Указываем имя SARIF файла
+          # sarif_file_name: 'zap-baseline-report.sarif' # УДАЛЕНО: Используем имя по умолчанию
           # HTML/JSON отчеты по умолчанию будут созданы как report_html.html и report_json.json в корне
-          artifact_name: 'zap-action-artifacts' # ОБНОВЛЕНО: Изменено имя артефакта, чтобы избежать конфликтов
+          artifact_name: 'zap-action-artifacts' # Изменено имя артефакта, чтобы избежать конфликтов
         continue-on-error: true # Позволяем пайплайну продолжать, даже если ZAP найдет уязвимости
 
       - name: List files after ZAP scan
         run: |
-          echo "Listing files in current workspace (now should contain zap-baseline-report.sarif and other ZAP reports):"
+          echo "Listing files in current workspace (now should contain zap-baseline.sarif and other ZAP reports):"
           ls -l ${{ github.workspace }}
-          if [ -f "zap-baseline-report.sarif" ]; then
-            echo "zap-baseline-report.sarif content (first 100 lines):"
-            head -n 100 "zap-baseline-report.sarif"
+          if [ -f "zap-baseline.sarif" ]; then # ОБНОВЛЕНО: Проверяем zap-baseline.sarif
+            echo "zap-baseline.sarif content (first 100 lines):"
+            head -n 100 "zap-baseline.sarif"
           else
-            echo "zap-baseline-report.sarif NOT FOUND in workspace root. This is an error."
+            echo "zap-baseline.sarif NOT FOUND in workspace root. This is an error."
             exit 1 # Fail the workflow if SARIF is not found here
           fi
           if [ -f "report_html.html" ]; then
@@ -256,14 +256,14 @@ jobs:
           fi
 
       - name: Upload ZAP SARIF results to GitHub Security
-        if: always() && success() # Загружаем отчет, если предыдущий шаг был успешен (не упал)
+        if: always() && success()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'zap-baseline-report.sarif' # Теперь файл ожидается в корневой директории
+          sarif_file: 'zap-baseline.sarif' # ОБНОВЛЕНО: Используем zap-baseline.sarif
           wait-for-processing: true
 
       - name: Upload ZAP HTML/JSON Reports as Artifact
-        if: always() # Загружаем артефакты, даже если предыдущие шаги завершились с ошибкой
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ZAP-HTML-JSON-Reports # Уникальное имя артефакта
