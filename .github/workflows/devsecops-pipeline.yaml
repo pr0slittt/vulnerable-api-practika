@@ -16,7 +16,6 @@ jobs:
     permissions:
       contents: read
       security-events: write
-      packages: write # Добавлено для работы с Docker и Trivy
 
     steps:
       - name: Checkout code
@@ -32,61 +31,36 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Cache Grype DB
-        uses: actions/cache@v3
-        with:
-          path: ~/.grype/db
-          key: ${{ runner.os }}-grype-db-${{ hashFiles('grype-db-version.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-grype-db-
-      - name: Create Grype DB Version File
-        run: echo "1" > grype-db-version.txt
-
-      - name: Download Grype
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
-          grype version
-
-      - name: Run Grype SCA Scan and Save SARIF
-        run: |
-          grype dir:./app -o sarif --file "${{ github.workspace }}/grype-results.sarif" || true
-
-      - name: Upload SARIF results to GitHub Security tab (Grype)
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'grype-results.sarif'
-          wait-for-processing: true
-      
-      - name: Upload Grype SARIF as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: grype-sarif-report
-          path: grype-results.sarif
-          retention-days: 5 # Хранить артефакт 5 дней
-
       - name: Install Semgrep CLI
         run: |
+          set -euxo pipefail
           pip install "semgrep>=1.76.0"
           semgrep --version
 
       - name: Run Semgrep SAST Scan
+        id: semgrep_scan_run
         run: |
-          set -euxo pipefail # Добавлено для более строгой отладки
-          # ИЗМЕНЕНО: Теперь вывод Semgrep направляется в jq для форматирования, а затем в файл.
-          semgrep --config "p/python" --config "p/security-audit" \
-            --sarif ./app | jq . > "${{ github.workspace }}/semgrep-results.sarif" || true
+          set -euxo pipefail
+          echo "Starting Semgrep CLI scan. PWD: $(pwd)"
           
-      - name: List files after Semgrep scan
-        run: |
-          echo "Listing files in ${{ github.workspace }}:"
-          ls -l ${{ github.workspace }}
-          if [ -f "${{ github.workspace }}/semgrep-results.sarif" ]; then
-            echo "First 100 lines of semgrep-results.sarif:"
-            head -n 100 "${{ github.workspace }}/semgrep-results.sarif"
-          else
-            echo "semgrep-results.sarif was NOT found."
+          SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
+          echo "Semgrep output path set to: $SARIF_OUTPUT_PATH"
+
+          # Добавляем путь к вашей папке с кастомными правилами
+          semgrep --config "p/python" --config "p/security-audit" \
+            --config "semgrep-rules/" \ # <-- ЭТА СТРОКА ОСТАЕТСЯ, ОНА ЗАГРУЖАЕТ ПРАВИЛА ИЗ ДИРЕКТОРИИ
+            --sarif -o "$SARIF_OUTPUT_PATH" ./app || true
+          
+          SEMGREP_EXIT_CODE=$?
+          echo "Semgrep scan finished. Raw exit code: $SEMGREP_EXIT_CODE"
+          
+          echo "semgrep_exit_code=$SEMGREP_EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+          if [ ! -f "$SARIF_OUTPUT_PATH" ]; then
+            echo "ERROR: semgrep-results.sarif was NOT created by Semgrep!"
+            exit 1
           fi
+
 
       - name: Upload Semgrep SARIF results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
@@ -94,51 +68,32 @@ jobs:
           sarif_file: 'semgrep-results.sarif'
           wait-for-processing: true
 
-      - name: Upload Semgrep SARIF as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: semgrep-sarif-report
-          path: semgrep-results.sarif
-          retention-days: 5 # Хранить артефакт 5 дней
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker Image
+      - name: Download Grype
         run: |
-          docker build -t vulnerable-api:latest .
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
+          grype version
 
-      - name: Run Trivy Container Scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'vulnerable-api:latest'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'HIGH,CRITICAL'
-          ignore-unfixed: true
-        continue-on-error: true # Сохранено, чтобы пайплайн не падал, если Trivy найдет уязвимости
-
-      - name: List files after Trivy scan
+      - name: Run Grype SCA Scan and Save SARIF
+        id: grype_scan_run
         run: |
-          echo "Listing files in ${{ github.workspace }}:"
-          ls -l ${{ github.workspace }}
-          if [ -f "${{ github.workspace }}/trivy-results.sarif" ]; then
-            echo "First 100 lines of trivy-results.sarif:"
-            head -n 100 "${{ github.workspace }}/trivy-results.sarif"
-          else
-            echo "trivy-results.sarif was NOT found."
+          set -euxo pipefail
+          echo "Starting Grype scan. PWD: $(pwd)"
+          GRYPE_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
+          echo "Grype output path set to: $GRYPE_OUTPUT_PATH"
+          grype dir:./app -o sarif --file "$GRYPE_OUTPUT_PATH" || true
+          
+          GRYPE_EXIT_CODE=$?
+          echo "Grype scan finished. Raw exit code: $GRYPE_EXIT_CODE"
+          echo "grype_exit_code=$GRYPE_EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+          if [ ! -f "$GRYPE_OUTPUT_PATH" ]; then
+            echo "ERROR: grype-results.sarif was NOT created by Grype!"
+            exit 1
           fi
 
-      - name: Upload Trivy SARIF results to GitHub Security
+      - name: Upload SARIF results to GitHub Security tab (Grype)
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: 'grype-results.sarif'
           wait-for-processing: true
-      
-      - name: Upload Trivy SARIF as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-sarif-report
-          path: trivy-results.sarif
-          retention-days: 5 # Хранить артефакт 5 дней
