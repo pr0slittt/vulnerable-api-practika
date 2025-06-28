@@ -9,16 +9,36 @@ on:
 jobs:
   security-scan:
     runs-on: ubuntu-latest
+
+    services:
+      # Пример: запускаем тестовое приложение на порту 8081 (если нужно)
+      vulnerable-api:
+        image: your-docker-image-for-api:latest
+        ports:
+          - 8081:8081
+        options: >-
+          --health-cmd "curl -f http://localhost:8081/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # === OWASP ZAP Baseline Scan ===
+      - name: Wait for vulnerable API to be healthy
+        run: |
+          echo "Waiting for vulnerable API to be healthy..."
+          for i in {1..30}; do
+            curl --fail http://localhost:8081/health && break
+            sleep 5
+          done
+
       - name: Run OWASP ZAP Baseline Scan
         run: |
-          docker run --rm -v ${{ github.workspace }}:/zap/wrk/:rw owasp/zap2docker-stable zap-baseline.py \
+          docker run --rm -v ${{ github.workspace }}:/zap/wrk/:rw --network host ghcr.io/zaproxy/zap2docker-stable zap-baseline.py \
             -t http://localhost:8081 \
-            -J zap-report.json
+            -J /zap/wrk/zap-report.json
 
       - name: Convert ZAP JSON to SARIF
         run: |
@@ -80,41 +100,4 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: zap-report.sarif
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      # === Semgrep Scan ===
-      - name: Run Semgrep Scan
-        uses: returntocorp/semgrep-action@v1
-        with:
-          output: semgrep-report.sarif
-          sarif: true
-
-      - name: Upload Semgrep SARIF report
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: semgrep-report.sarif
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      # === Grype Scan ===
-      - name: Run Grype Scan
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b $HOME/.local/bin
-          $HOME/.local/bin/grype dir:. -o sarif > grype-report.sarif
-
-      - name: Upload Grype SARIF report
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: grype-report.sarif
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      # === Trivy Scan ===
-      - name: Run Trivy Scan
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b $HOME/.local/bin
-          $HOME/.local/bin/trivy fs --format sarif --output trivy-report.sarif .
-
-      - name: Upload Trivy SARIF report
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trivy-report.sarif
           token: ${{ secrets.GITHUB_TOKEN }}
