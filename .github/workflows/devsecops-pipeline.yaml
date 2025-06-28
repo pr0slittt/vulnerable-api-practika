@@ -205,10 +205,15 @@ jobs:
             fi
           done
 
+      - name: Pull OWASP ZAP Docker Image
+        run: |
+          echo "Attempting to pull owasp/zap2docker-stable image..."
+          docker pull owasp/zap2docker-stable
+
       - name: Run OWASP ZAP Baseline Scan (Docker)
         run: |
           echo "Running OWASP ZAP Baseline Scan via Docker..."
-          docker run --rm -v $(pwd):/zap/wrk/:rw owasp/zap2docker-weekly \
+          docker run --rm -v $(pwd):/zap/wrk/:rw owasp/zap2docker-stable \
             bash -c "\
               zap-baseline.py \
               -t http://localhost:8081 \
