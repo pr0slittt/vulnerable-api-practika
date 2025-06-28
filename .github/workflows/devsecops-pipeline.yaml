@@ -219,9 +219,14 @@ jobs:
             -t http://localhost:8081 \
             -J report_json.json \
             -H report_html.html \
-            -r zap-baseline-report.sarif; \
-          echo 'ZAP Baseline script exited with code: '$?'; \
-          ls -l \
+            -r zap-baseline-report.sarif
+          
+          # Захватываем код выхода последней команды (zap-baseline.py)
+          ZAP_EXIT_CODE=$?
+          echo "ZAP Baseline script exited with code: $ZAP_EXIT_CODE"
+          
+          echo "Listing files in current directory after ZAP scan:"
+          ls -l
           
           echo "ZAP scan finished."
 
