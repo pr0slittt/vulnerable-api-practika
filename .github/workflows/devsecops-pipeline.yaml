@@ -167,12 +167,7 @@ jobs:
           path: trivy-results.sarif
           retention-days: 5
 
-      - name: Install Nikto
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y nikto
-          nikto -V
-
+      # --- DAST Scan with OWASP ZAP ---
       - name: Start Vulnerable API (vAPI.py) in background
         run: |
           echo "Starting vAPI.py in background..."
@@ -180,25 +175,34 @@ jobs:
           VAPI_PID=$!
           echo "vAPI.py started with PID: $VAPI_PID"
           echo "$VAPI_PID" > vapi_pid.txt
-          echo "Waiting for vAPI.py to start (5 seconds)..."
-          sleep 5
+          echo "Waiting for vAPI.py to start (10 seconds)..."
+          sleep 10 # Увеличено время ожидания для ZAP
 
-      - name: Run Nikto DAST Scan
-        run: |
-          echo "Running Nikto scan against http://localhost:8081"
-          nikto -h http://localhost:8081 -o nikto-results.txt || true
-          echo "Nikto scan completed. Results saved to nikto-results.txt"
-          cat nikto-results.txt
+      - name: Run OWASP ZAP Full Scan
+        id: zap_scan
+        uses: zaproxy/action-full-scan@v0.12.0 # Используем официальный Action для ZAP Full Scan
+        with:
+          target: 'http://localhost:8081' # Цель сканирования
+          format: 'sarif' # Вывод в формате SARIF
+          output_file: 'owasp-zap-results.sarif' # Имя SARIF файла
+        continue-on-error: true # Позволяем пайплайну продолжаться даже при ошибках ZAP
 
-      - name: Upload Nikto DAST Report as Artifact
+      - name: Upload OWASP ZAP SARIF results to GitHub Security
+        if: always() # Всегда пытаться загрузить отчет ZAP
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: owasp-zap-results.sarif
+          wait-for-processing: true
+
+      - name: Upload OWASP ZAP SARIF as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nikto-dast-report
-          path: nikto-results.txt
+          name: owasp-zap-sarif-report
+          path: owasp-zap-results.sarif
           retention-days: 5
 
       - name: Stop Vulnerable API (Cleanup)
-        if: always()
+        if: always() # Важно: этот шаг должен выполняться всегда, чтобы очистить фоновый процесс
         run: |
           if [ -f vapi_pid.txt ]; then
             VAPI_PID=$(cat vapi_pid.txt)
