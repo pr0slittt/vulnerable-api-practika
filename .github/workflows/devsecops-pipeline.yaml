@@ -10,35 +10,36 @@ jobs:
   security-scan:
     runs-on: ubuntu-latest
 
-    services:
-      # Пример: запускаем тестовое приложение на порту 8081 (если нужно)
-      vulnerable-api:
-        image: your-docker-image-for-api:latest
-        ports:
-          - 8081:8081
-        options: >-
-          --health-cmd "curl -f http://localhost:8081/health || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Wait for vulnerable API to be healthy
+      - name: Build Docker image for vulnerable API
+        run: docker build -t vulnerable-api:latest .
+
+      - name: Create Docker network
+        run: docker network create zap-network
+
+      - name: Start vulnerable API container in network
         run: |
-          echo "Waiting for vulnerable API to be healthy..."
+          docker run -d --name vulnerable-api --network zap-network -p 8081:8081 vulnerable-api:latest
+
+      - name: Wait for API to be ready (via localhost)
+        run: |
           for i in {1..30}; do
-            curl --fail http://localhost:8081/health && break
-            sleep 5
+            if curl --fail http://localhost:8081; then
+              echo "API is up!"
+              break
+            fi
+            echo "Waiting for API..."
+            sleep 2
           done
 
-      - name: Run OWASP ZAP Baseline Scan
+      - name: Run OWASP ZAP Baseline Scan in network
         run: |
-          docker run --rm -v ${{ github.workspace }}:/zap/wrk/:rw --network host ghcr.io/zaproxy/zap2docker-stable zap-baseline.py \
-            -t http://localhost:8081 \
-            -J /zap/wrk/zap-report.json
+          docker run --rm --network zap-network -v ${{ github.workspace }}:/zap/wrk/:rw owasp/zap2docker-stable zap-baseline.py \
+            -t http://vulnerable-api:8081 \
+            -J zap-report.json
 
       - name: Convert ZAP JSON to SARIF
         run: |
@@ -101,3 +102,8 @@ jobs:
         with:
           sarif_file: zap-report.sarif
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup Docker containers and network
+        run: |
+          docker rm -f vulnerable-api || true
+          docker network rm zap-network || true
