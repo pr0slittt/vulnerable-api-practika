@@ -176,19 +176,20 @@ jobs:
           echo "vAPI.py started with PID: $VAPI_PID"
           echo "$VAPI_PID" > vapi_pid.txt
           echo "Waiting for vAPI.py to start (10 seconds)..."
-          sleep 10 # Увеличено время ожидания для ZAP
+          sleep 10
 
       - name: Run OWASP ZAP Full Scan
         id: zap_scan
-        uses: zaproxy/action-full-scan@v0.12.0 # Используем официальный Action для ZAP Full Scan
+        uses: zaproxy/action-full-scan@v0.12.0
         with:
-          target: 'http://localhost:8081' # Цель сканирования
-          format: 'sarif' # Вывод в формате SARIF
-          output_file: 'owasp-zap-results.sarif' # Имя SARIF файла
-        continue-on-error: true # Позволяем пайплайну продолжаться даже при ошибках ZAP
+          target: 'http://localhost:8081'
+          # ИСПРАВЛЕНИЕ: Указываем полный путь для выходного файла SARIF
+          output_file: '${{ github.workspace }}/owasp-zap-results.sarif'
+          format: 'sarif'
+        continue-on-error: true
 
       - name: Upload OWASP ZAP SARIF results to GitHub Security
-        if: always() # Всегда пытаться загрузить отчет ZAP
+        if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: owasp-zap-results.sarif
@@ -202,7 +203,7 @@ jobs:
           retention-days: 5
 
       - name: Stop Vulnerable API (Cleanup)
-        if: always() # Важно: этот шаг должен выполняться всегда, чтобы очистить фоновый процесс
+        if: always()
         run: |
           if [ -f vapi_pid.txt ]; then
             VAPI_PID=$(cat vapi_pid.txt)
