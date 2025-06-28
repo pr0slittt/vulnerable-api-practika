@@ -219,15 +219,18 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }} # Рекомендуется использовать секрет
         continue-on-error: true # Позволяем пайплайну продолжать, даже если вход не удался
 
+      - name: Create ZAP Reports Directory
+        run: mkdir -p zap-results # Создаем директорию для отчетов ZAP
+
       - name: Run OWASP ZAP Baseline Scan (GitHub Action)
-        id: zap_baseline_scan_action
+        id: run_owasp_zap_scan # Изменено ID шага
         uses: zaproxy/action-baseline@v0.12.0 # Используем официальный GitHub Action для ZAP
         with:
           target: 'http://localhost:8081' # Целевой URL вашего приложения
-          # Включаем вывод отчетов в форматах SARIF, HTML и JSON
-          sarif_filepath: 'zap-baseline-report.sarif'
-          html_filepath: 'zap-baseline-report.html'
-          json_filepath: 'zap-baseline-report.json'
+          # Включаем вывод отчетов в форматах SARIF, HTML и JSON в новую директорию
+          sarif_filepath: 'zap-results/zap-baseline-report.sarif'
+          html_filepath: 'zap-results/zap-baseline-report.html'
+          json_filepath: 'zap-results/zap-baseline-report.json'
           # Опционально: Завершать работу с ошибкой, если ZAP находит предупреждения или ошибки
           # issues_as_errors: true 
           # cmd_options: '-config rules.conf' # Дополнительные опции ZAP CLI (если нужны)
@@ -237,18 +240,18 @@ jobs:
         if: always() # Загружаем отчет, даже если предыдущие шаги ZAP завершились с ошибкой
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'zap-baseline-report.sarif' # Путь к SARIF файлу, созданному ZAP
+          sarif_file: 'zap-results/zap-baseline-report.sarif' # Обновлен путь к SARIF файлу
           wait-for-processing: true
-          # working-directory: ${{ github.workspace }} # Этот параметр не нужен, если sarif_file уже корректен
+          working-directory: ${{ github.workspace }} # Убедитесь, что этот путь актуален
 
       - name: Upload ZAP HTML/JSON Reports as Artifact
         if: always() # Загружаем артефакты, даже если предыдущие шаги завершились с ошибкой
         uses: actions/upload-artifact@v4
         with:
-          name: zap-baseline-reports # Имя артефакта, изменено на более стандартное
+          name: OWASP ZAP Reports # Изменено имя артефакта
           path: |
-            zap-baseline-report.html
-            zap-baseline-report.json
+            zap-results/zap-baseline-report.html # Обновлен путь
+            zap-results/zap-baseline-report.json # Обновлен путь
           retention-days: 5 # Хранить артефакт 5 дней
 
       - name: Stop Vulnerable API (Cleanup)
