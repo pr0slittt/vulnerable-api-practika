@@ -44,7 +44,6 @@ jobs:
           set -euxo pipefail
           echo "Starting Semgrep CLI scan. PWD: $(pwd)"
           
-          # Отладочный вывод: Список файлов в текущей директории и в папке app
           echo "Listing files in current directory (should contain semgrep-rules/):"
           ls -l .
           echo "Listing files in app/ directory:"
@@ -53,8 +52,6 @@ jobs:
           SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
           echo "Semgrep output path set to: $SARIF_OUTPUT_PATH"
 
-          # Выполнение Semgrep с детальным логированием (используйте --debug или --verbose)
-          # --verbose выводит информацию о загруженных правилах и пропусках
           semgrep \
             --config "p/python" \
             --config "p/security-audit" \
@@ -62,7 +59,7 @@ jobs:
             --sarif \
             -o "$SARIF_OUTPUT_PATH" \
             ./app \
-            --verbose || true # <-- ДОБАВЛЕНО: --verbose для детального логирования
+            --verbose || true
           
           SEMGREP_EXIT_CODE=$?
           echo "Semgrep scan finished. Raw exit code: $SEMGREP_EXIT_CODE"
@@ -73,12 +70,10 @@ jobs:
             echo "ERROR: semgrep-results.sarif was NOT created by Semgrep!"
             exit 1
           else
-            # Отладочный вывод: Размер SARIF-файла
             echo "Semgrep SARIF file created. Size: $(du -h "$SARIF_OUTPUT_PATH" | awk '{print $1}')"
             echo "First 100 lines of semgrep-results.sarif:"
             head -n 100 "$SARIF_OUTPUT_PATH"
           fi
-
 
       - name: Upload Semgrep SARIF results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
@@ -172,3 +167,208 @@ jobs:
           name: trivy-sarif-report
           path: trivy-results.sarif
           retention-days: 5
+
+      # --- DAST Scan with OWASP ZAP ---
+      - name: Start Vulnerable API (vAPI.py) in background
+        run: |
+          echo "Starting vAPI.py in background..."
+          nohup python ./app/vAPI.py > vapi_output.log 2>&1 &
+          VAPI_PID=$!
+          echo "vAPI.py started with PID: $VAPI_PID"
+          echo "$VAPI_PID" > vapi_pid.txt
+          echo "Waiting for vAPI.py to start (10 seconds)..."
+          sleep 10
+
+      - name: Run OWASP ZAP Full Scan
+        id: zap_scan
+        uses: zaproxy/action-full-scan@v0.12.0
+        with:
+          target: 'http://localhost:8081'
+          json_file_name: 'report_json.json'
+        continue-on-error: true
+
+      - name: Install sarif-om
+        run: |
+          pip install sarif-om
+
+      - name: Convert ZAP JSON Report to SARIF using Python
+        id: convert_zap_json_to_sarif
+        run: |
+          # Все эти строки должны быть с отступом в 10 пробелов
+          set -euxo pipefail
+          export JSON_INPUT_FILE="report_json.json"
+          export SARIF_OUTPUT_FILE="owasp-zap-results.sarif"
+
+          if [ ! -f "$JSON_INPUT_FILE" ]; then
+            echo "Error: $JSON_INPUT_FILE not found. ZAP scan might have failed or not produced JSON report."
+            exit 1
+          fi
+
+          python -c <<'EOF' # Строка запуска Python-скрипта с маркером 'EOF'
+            # ВЕСЬ Python-код внутри этого блока должен быть с отступом
+            # НЕ МЕНЕЕ 2 пробелов ОТНОСИТЕЛЬНО маркера 'EOF' выше (т.е. 12 пробелов).
+            import json
+            import sarif_om as sarif
+            from datetime import datetime
+            import os
+
+            def convert_zap_to_sarif(zap_json_path, sarif_output_path):
+                with open(zap_json_path, 'r', encoding='utf-8') as f:
+                    zap_report = json.load(f)
+
+                sarif_log = sarif.SarifLog(
+                    schema_uri='https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.5.json',
+                    version='2.1.0',
+                    runs=[]
+                )
+
+                run = sarif.Run(
+                    tool=sarif.Tool(
+                        driver=sarif.ToolComponent(
+                            name='OWASP ZAP',
+                            full_name='OWASP ZAP Full Scan',
+                            version='${{ github.action_version }}'
+                        )
+                    ),
+                    results=[],
+                )
+
+                for alert in zap_report.get('site', [])[0].get('alerts', []):
+                    rule_id = alert.get('pluginid', 'N/A')
+                    rule_name = alert.get('name', 'Unknown Alert')
+                    description = alert.get('description', 'No description provided.')
+                    solution = alert.get('solution', 'No solution provided.')
+                    severity = alert.get('riskdesc', 'Informational').split(' ')[0].lower()
+
+                    sarif_level = 'note'
+                    if severity == 'high':
+                        sarif_level = 'error'
+                    elif severity == 'medium':
+                        sarif_level = 'warning'
+                    elif severity == 'low':
+                        sarif_level = 'note'
+                    elif severity == 'informational':
+                        sarif_level = 'note'
+
+                    for instance in alert.get('instances', []):
+                        uri = instance.get('uri', 'N/A')
+                        method = instance.get('method', 'N/A')
+                        param = instance.get('param', 'N/A')
+                        attack = instance.get('attack', 'N/A')
+                        evidence = instance.get('evidence', 'No evidence provided.')
+
+                        rule = sarif.ReportingDescriptor(
+                            id=rule_id,
+                            name=rule_name,
+                            full_description=sarif.Markdown(text=description),
+                            help_uri=alert.get('reference', 'N/A'),
+                            help=sarif.Markdown(text=f'**Description:** {description}\\n\\n**Solution:** {solution}\\n\\n**References:** {alert.get("reference", "N/A")}'),
+                            properties={'security-severity': f'{alert.get("riskcode", 0)}', 'tags': ['DAST', 'OWASP ZAP']}
+                        )
+                        if not any(r.id == rule.id for r in run.tool.driver.rules or []):
+                            if run.tool.driver.rules is None:
+                                run.tool.driver.rules = []
+                            run.tool.driver.rules.append(rule)
+
+                        location = sarif.Location(
+                            physical_location=sarif.PhysicalLocation(
+                                artifact_location=sarif.ArtifactLocation(uri=uri),
+                                region=sarif.Region(
+                                    start_line=1
+                                )
+                            )
+                        )
+
+                        message_text = f'Alert: {rule_name}\\nURI: {uri}\\nMethod: {method}\\nParameter: {param}\\nAttack: {attack}\\nEvidence: {evidence}'
+                        message = sarif.Message(text=message_text, markdown=message_text)
+
+                        result = sarif.Result(
+                            rule_id=rule_id,
+                            message=message,
+                            locations=[location],
+                            level=sarif_level,
+                            properties={
+                                'method': method,
+                                'parameter': param,
+                                'attack': attack,
+                                'evidence': evidence
+                            }
+                        )
+                        run.results.append(result)
+
+                sarif_log.runs.append(run)
+
+                with open(sarif_output_path, 'w', encoding='utf-8') as f:
+                    f.write(sarif_log.model_dump_json(by_alias=True, indent=2))
+
+            if __name__ == '__main__':
+                zap_json_file = os.getenv('JSON_INPUT_FILE')
+                sarif_out_file = os.getenv('SARIF_OUTPUT_FILE')
+                if zap_json_file and sarif_out_file:
+                    convert_zap_to_sarif(zap_json_file, sarif_out_file)
+                else:
+                    print("Error: JSON_INPUT_FILE or SARIF_OUTPUT_FILE environment variable not set.")
+                    exit(1)
+          EOF # Этот маркер 'EOF' должен быть выровнен с 'python -c <<'EOF'' (10 пробелов)
+          # Все эти строки также должны быть с отступом в 10 пробелов
+          # Check if the SARIF file was created
+          if [ ! -f "$SARIF_OUTPUT_FILE" ]; then
+            echo "ERROR: $SARIF_OUTPUT_FILE was NOT created by the Python script!"
+            exit 1
+          else
+            echo "Successfully converted $JSON_INPUT_FILE to $SARIF_OUTPUT_FILE."
+            echo "SARIF file size: $(du -h "$SARIF_OUTPUT_FILE" | awk '{print $1}')"
+            echo "First 50 lines of "$SARIF_OUTPUT_FILE":"
+            head -n 50 "$SARIF_OUTPUT_FILE"
+          fi
+
+      - name: List files after ZAP scan and conversion
+        run: |
+          echo "Listing files in ${{ github.workspace }}:"
+          ls -l ${{ github.workspace }}
+          echo "Listing files recursively in ${{ github.workspace }}:"
+          ls -lR ${{ github.workspace }}
+          if [ -f "${{ github.workspace }}/owasp-zap-results.sarif" ]; then
+            echo "owasp-zap-results.sarif content (first 100 lines):"
+            head -n 100 "${{ github.workspace }}/owasp-zap-results.sarif"
+          else
+            echo "owasp-zap-results.sarif not found after ZAP scan."
+          fi
+
+      - name: Upload OWASP ZAP SARIF results to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'owasp-zap-results.sarif'
+          wait-for-processing: true
+
+      - name: Upload OWASP ZAP SARIF as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: owasp-zap-sarif-report
+          path: owasp-zap-results.sarif
+          retention-days: 5
+
+      - name: Stop Vulnerable API (Cleanup)
+        if: always()
+        run: |
+          if [ -f vapi_pid.txt ]; then
+            VAPI_PID=$(cat vapi_pid.txt)
+            echo "Stopping vAPI.py with PID: $VAPI_PID"
+            kill $VAPI_PID || true
+            sleep 2
+            if ps -p $VAPI_PID > /dev/null; then
+              echo "Process $VAPI_PID is still running, forcing kill."
+              kill -9 $VAPI_PID || true
+            else
+              echo "Process $VAPI_PID stopped successfully."
+            fi
+            rm vapi_pid.txt
+          else
+            echo "vapi_pid.txt not found, possibly vAPI.py was not started or already stopped."
+          fi
+          if [ -f vapi_output.log ]; then
+            echo "--- vAPI.py Output Log ---"
+            cat vapi_output.log
+            echo "--- End of vAPI.py Output Log ---"
+          fi
