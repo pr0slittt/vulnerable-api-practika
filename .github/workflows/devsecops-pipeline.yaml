@@ -207,7 +207,8 @@ jobs:
           target: 'http://localhost:8081'
           issue_title: ZAP Scan Baseline Report
           fail_action: false
-          allow_issue_writing: true # Этот параметр загружает SARIF в GitHub Security
+          allow_issue_writing: true
+          upload_artifact: false # НОВОЕ: Полностью отключаем встроенную загрузку артефактов ZAP
         continue-on-error: true
 
       - name: Verify ZAP Action Output
