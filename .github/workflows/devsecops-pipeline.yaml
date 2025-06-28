@@ -16,6 +16,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      packages: write # Необходимо для работы с Docker и Trivy
 
     steps:
       - name: Checkout code
@@ -46,10 +47,13 @@ jobs:
           SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
           echo "Semgrep output path set to: $SARIF_OUTPUT_PATH"
 
-          # Добавляем путь к вашей папке с кастомными правилами
-          semgrep --config "p/python" --config "p/security-audit" \
-            --config "semgrep-rules/" \ # <-- ЭТА СТРОКА ОСТАЕТСЯ, ОНА ЗАГРУЖАЕТ ПРАВИЛА ИЗ ДИРЕКТОРИИ
-            --sarif -o "$SARIF_OUTPUT_PATH" ./app || true
+          semgrep \
+            --config "p/python" \
+            --config "p/security-audit" \
+            --config "semgrep-rules/" \
+            --sarif \
+            -o "$SARIF_OUTPUT_PATH" \
+            ./app || true
           
           SEMGREP_EXIT_CODE=$?
           echo "Semgrep scan finished. Raw exit code: $SEMGREP_EXIT_CODE"
@@ -61,12 +65,29 @@ jobs:
             exit 1
           fi
 
-
       - name: Upload Semgrep SARIF results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'semgrep-results.sarif'
           wait-for-processing: true
+          working-directory: ${{ github.workspace }}
+
+      - name: Upload Semgrep SARIF as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-sarif-report
+          path: semgrep-results.sarif
+          retention-days: 5
+
+      - name: Cache Grype DB
+        uses: actions/cache@v3
+        with:
+          path: ~/.grype/db
+          key: ${{ runner.os }}-grype-db-${{ hashFiles('grype-db-version.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-grype-db-
+      - name: Create Grype DB Version File
+        run: echo "1" > grype-db-version.txt
 
       - name: Download Grype
         run: |
@@ -97,3 +118,42 @@ jobs:
         with:
           sarif_file: 'grype-results.sarif'
           wait-for-processing: true
+          working-directory: ${{ github.workspace }}
+
+      - name: Upload Grype SARIF as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: grype-sarif-report
+          path: grype-results.sarif
+          retention-days: 5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Image
+        run: |
+          docker build -t vulnerable-api:latest .
+
+      - name: Run Trivy Container Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'vulnerable-api:latest'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+        continue-on-error: true
+
+      - name: Upload Trivy SARIF results to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+          wait-for-processing: true
+
+      - name: Upload Trivy SARIF as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sarif-report
+          path: trivy-results.sarif
+          retention-days: 5
