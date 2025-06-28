@@ -17,7 +17,7 @@ jobs:
       contents: read
       security-events: write
       packages: write
-      issues: write # Добавлено для потенциального создания issues при обнаружении уязвимостей (опционально)
+      issues: write
 
     steps:
       - name: Checkout code
@@ -36,7 +36,6 @@ jobs:
       - name: Install Semgrep CLI
         run: |
           set -euxo pipefail
-          # Проверяем, установлен ли Semgrep, если нет - устанавливаем
           if ! command -v semgrep &> /dev/null
           then
               echo "Semgrep not found, installing..."
@@ -60,8 +59,6 @@ jobs:
           SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
           echo "Semgrep output path set to: $SARIF_OUTPUT_PATH"
 
-          # Выполнение Semgrep с детальным логированием (используйте --debug или --verbose)
-          # --verbose выводит информацию о загруженных правилах и пропусках
           semgrep \
             --config "p/python" \
             --config "p/security-audit" \
@@ -69,7 +66,7 @@ jobs:
             --sarif \
             -o "$SARIF_OUTPUT_PATH" \
             ./app \
-            --verbose || true # Разрешаем шагу завершиться успешно, даже если Semgrep найдет проблемы
+            --verbose || true
           
           SEMGREP_EXIT_CODE=$?
           echo "Semgrep scan finished. Raw exit code: $SEMGREP_EXIT_CODE"
@@ -90,7 +87,7 @@ jobs:
         with:
           sarif_file: 'semgrep-results.sarif'
           wait-for-processing: true
-          working-directory: ${{ github.workspace }} # Убедитесь, что этот путь актуален
+          working-directory: ${{ github.workspace }}
 
       - name: Upload Semgrep SARIF as Artifact
         uses: actions/upload-artifact@v4
@@ -145,7 +142,7 @@ jobs:
         with:
           sarif_file: 'grype-results.sarif'
           wait-for-processing: true
-          working-directory: ${{ github.workspace }} # Убедитесь, что этот путь актуален
+          working-directory: ${{ github.workspace }}
 
       - name: Upload Grype SARIF as Artifact
         uses: actions/upload-artifact@v4
@@ -185,19 +182,15 @@ jobs:
           path: trivy-results.sarif
           retention-days: 5
 
-      # --- НАЧАЛО: Интеграция OWASP ZAP DAST (через Docker) ---
       - name: Start Vulnerable API (vAPI.py) in background
         run: |
           echo "Starting vAPI.py in background..."
-          # Запускаем приложение в фоне, перенаправляя вывод в лог-файл
           nohup python ./app/vAPI.py > vapi_output.log 2>&1 &
           VAPI_PID=$!
           echo "vAPI.py started with PID: $VAPI_PID"
-          echo "$VAPI_PID" > vapi_pid.txt # Сохраняем PID для последующей остановки
-          
-          # Health check loop for vAPI.py (увеличенное количество попыток и время ожидания)
+          echo "$VAPI_PID" > vapi_pid.txt
           echo "Waiting for vAPI.py to be accessible at http://localhost:8081..."
-          for i in $(seq 1 30); do # Попытаемся до 30 раз с интервалом 5 секунд (всего 150 секунд)
+          for i in $(seq 1 30); do
             if curl --output /dev/null --silent --head --fail http://localhost:8081; then
               echo "vAPI.py is up and running!"
               break
@@ -207,23 +200,21 @@ jobs:
             fi
             if [ $i -eq 30 ]; then
               echo "ERROR: vAPI.py did not start within the expected time. Check vapi_output.log for details."
-              cat vapi_output.log # Выводим лог, чтобы помочь в отладке
-              exit 1 # Проваливаем пайплайн, если API не запустилось
+              cat vapi_output.log
+              exit 1
             fi
           done
 
       - name: Run OWASP ZAP Baseline Scan (Docker)
         run: |
           echo "Running OWASP ZAP Baseline Scan via Docker..."
-          # Запускаем ZAP Docker-образ, монтируя текущую рабочую директорию.
-          # Отчеты будут созданы непосредственно в корневой директории рабочего пространства.
           docker run --rm -v $(pwd):/zap/wrk/:rw owasp/zap2docker-stable \
             zap-baseline.py \
             -t http://localhost:8081 \
             -J /zap/wrk/report_json.json \
             -H /zap/wrk/report_html.html \
             -r /zap/wrk/zap-baseline-report.sarif \
-            || true # Разрешаем команде завершиться с ошибкой, если ZAP найдет уязвимости (для продолжения пайплайна)
+            || true
           
           echo "ZAP scan finished."
 
@@ -242,7 +233,7 @@ jobs:
             head -n 100 "$SARIF_FILE"
           else
             echo "$SARIF_FILE NOT FOUND in workspace root. This is an error."
-            exit 1 # Fail the workflow if SARIF is not found here
+            exit 1
           fi
 
           if [ -f "$HTML_FILE" ]; then
@@ -256,44 +247,26 @@ jobs:
             echo "$JSON_FILE NOT FOUND."
           fi
 
-      - name: Upload ZAP SARIF results to GitHub Security
-        if: always() && success()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'zap-baseline-report.sarif' # Файл SARIF ожидается в корневой директории
-          wait-for-processing: true
-
-      - name: Upload ZAP HTML/JSON Reports as Artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ZAP-HTML-JSON-Reports
-          path: |
-            report_html.html # Файл HTML ожидается в корневой директории
-            report_json.json # Файл JSON ожидается в корневой директории
-          retention-days: 5 # Хранить артефакт 5 дней
-
       - name: Stop Vulnerable API (Cleanup)
-        if: always() # Этот шаг должен выполняться всегда, чтобы остановить процесс
+        if: always()
         run: |
           if [ -f vapi_pid.txt ]; then
             VAPI_PID=$(cat vapi_pid.txt)
             echo "Stopping vAPI.py with PID: $VAPI_PID"
-            kill $VAPI_PID || true # Пытаемся мягко остановить
-            sleep 2 # Даем время на остановку
+            kill $VAPI_PID || true
+            sleep 2
             if ps -p $VAPI_PID > /dev/null; then
               echo "Process $VAPI_PID is still running, forcing kill."
-              kill -9 $VAPI_PID || true # Принудительно убиваем, если не остановился
+              kill -9 $VAPI_PID || true
             else
               echo "Process $VAPI_PID stopped successfully."
             fi
-            rm vapi_pid.txt # Удаляем файл с PID
+            rm vapi_pid.txt
           else
             echo "vapi_pid.txt not found, possibly vAPI.py was not started or already stopped."
           fi
           if [ -f vapi_output.log ]; then
             echo "--- vAPI.py Output Log ---"
-            cat vapi_output.log # Выводим лог работы API для отладки
+            cat vapi_output.log
             echo "--- End of vAPI.py Output Log ---"
           fi
-      # --- КОНЕЦ: Интеграция OWASP ZAP DAST (через Docker) ---
