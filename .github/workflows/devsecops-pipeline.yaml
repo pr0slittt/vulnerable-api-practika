@@ -236,8 +236,21 @@ jobs:
           # cmd_options: '-config rules.conf' # Дополнительные опции ZAP CLI (если нужны)
         continue-on-error: true # Позволяем пайплайну продолжать, даже если ZAP найдет уязвимости
 
+      - name: List files after ZAP scan
+        run: |
+          echo "Listing files in zap-results/:"
+          ls -l zap-results/ # <-- КЛЮЧЕВОЙ ШАГ ОТЛАДКИ
+          if [ -f "zap-results/zap-baseline-report.sarif" ]; then
+            echo "zap-results/zap-baseline-report.sarif content (first 100 lines):"
+            head -n 100 "zap-results/zap-baseline-report.sarif"
+          else
+            echo "zap-results/zap-baseline-report.sarif NOT FOUND in zap-results/."
+          fi
+
       - name: Upload ZAP SARIF results to GitHub Security
-        if: always() # Загружаем отчет, даже если предыдущие шаги ZAP завершились с ошибкой
+        if: always() && success() # Загружаем отчет, если предыдущий шаг был успешен (не упал)
+        # ^^^^^^ ИЗМЕНЕНО: Добавлено `success()` чтобы избежать загрузки пустого/несуществующего файла
+        # если ZAP action сам завершился неудачно и не создал SARIF.
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'zap-results/zap-baseline-report.sarif' # Обновлен путь к SARIF файлу
