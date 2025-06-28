@@ -187,13 +187,26 @@ jobs:
           format: 'sarif'
         continue-on-error: true
 
+      - name: List files after ZAP scan
+        run: |
+          echo "Listing files in ${{ github.workspace }}:"
+          ls -l ${{ github.workspace }}
+          echo "Listing files recursively in ${{ github.workspace }}:"
+          ls -lR ${{ github.workspace }}
+          if [ -f "${{ github.workspace }}/owasp-zap-results.sarif" ]; then
+            echo "owasp-zap-results.sarif content (first 100 lines):"
+            head -n 100 "${{ github.workspace }}/owasp-zap-results.sarif"
+          else
+            echo "owasp-zap-results.sarif not found after ZAP scan."
+          fi
+
       - name: Upload OWASP ZAP SARIF results to GitHub Security
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'owasp-zap-results.sarif' # Указание файла относительно working-directory
+          sarif_file: 'owasp-zap-results.sarif'
           wait-for-processing: true
-          working-directory: ${{ github.workspace }} # <-- ДОБАВЛЕНО: Явно указываем рабочий каталог
+          # working-directory: ${{ github.workspace }} # <-- УДАЛЕНО: Этот параметр не поддерживается upload-sarif@v3
 
       - name: Upload OWASP ZAP SARIF as Artifact
         uses: actions/upload-artifact@v4
