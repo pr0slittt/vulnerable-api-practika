@@ -10,240 +10,111 @@ jobs:
   security-scan:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    # --- OWASP ZAP Baseline Scan ---
-    - name: Run OWASP ZAP Baseline Scan
-      run: |
-        echo "Starting OWASP ZAP Baseline Scan"
-        docker run --rm --network host -v ${{ github.workspace }}:/zap/wrk/:rw ghcr.io/zaproxy/zap-stable:latest zap-baseline.py \
-          -t http://localhost:8081 \
-          -J zap-report.json
-        ls -la ${{ github.workspace }}
+      # === OWASP ZAP Baseline Scan ===
+      - name: Run OWASP ZAP Baseline Scan
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/zap/wrk/:rw owasp/zap2docker-stable zap-baseline.py \
+            -t http://localhost:8081 \
+            -J zap-report.json
 
-    - name: Check ZAP report existence
-      run: |
-        if [ ! -f "${{ github.workspace }}/zap-report.json" ]; then
-          echo "ERROR: zap-report.json not found!"
-          exit 1
-        else
-          echo "zap-report.json found"
-        fi
+      - name: Convert ZAP JSON to SARIF
+        run: |
+          python3 <<EOF
+          import json
+          def convert_zap_json_to_sarif(zap_json_path, sarif_path):
+              with open(zap_json_path) as f:
+                  zap_data = json.load(f)
 
-    - name: Convert ZAP JSON report to SARIF
-      run: |
-        python3 <<'EOF'
-        import json
-        def convert_zap_json_to_sarif(zap_json_path, sarif_path):
-            with open(zap_json_path, 'r') as f:
-                zap_data = json.load(f)
+              sarif = {
+                  "version": "2.1.0",
+                  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+                  "runs": [{
+                      "tool": {"driver": {
+                          "name": "OWASP ZAP",
+                          "informationUri": "https://www.zaproxy.org/",
+                          "rules": []
+                      }},
+                      "results": []
+                  }]
+              }
+              rules = {}
+              results = []
 
-            sarif = {
-                "version": "2.1.0",
-                "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
-                "runs": [{
-                    "tool": {
-                        "driver": {
-                            "name": "OWASP ZAP",
-                            "informationUri": "https://www.zaproxy.org/",
-                            "rules": []
-                        }
-                    },
-                    "results": []
-                }]
-            }
+              for alert in zap_data.get("alerts", []):
+                  rule_id = alert.get("alertId", alert.get("alert", "Unknown"))
+                  if rule_id not in rules:
+                      rules[rule_id] = {
+                          "id": rule_id,
+                          "name": alert.get("alert", ""),
+                          "shortDescription": {"text": alert.get("alert", "")},
+                          "helpUri": alert.get("reference", ""),
+                          "properties": {"tags": ["security", "zap"]}
+                      }
+                  for instance in alert.get("instances", []):
+                      location = {
+                          "physicalLocation": {
+                              "artifactLocation": {"uri": instance.get("uri", "")},
+                              "region": {"startLine": 1}
+                          }
+                      }
+                      results.append({
+                          "ruleId": rule_id,
+                          "message": {"text": alert.get("description", "")},
+                          "locations": [location],
+                          "level": "warning"
+                      })
 
-            rules = {}
-            results = []
+              sarif["runs"][0]["tool"]["driver"]["rules"] = list(rules.values())
+              sarif["runs"][0]["results"] = results
 
-            for alert in zap_data.get("alerts", []):
-                rule_id = alert.get("alertId", alert.get("alert", "Unknown"))
-                if rule_id not in rules:
-                    rules[rule_id] = {
-                        "id": rule_id,
-                        "name": alert.get("alert", ""),
-                        "shortDescription": {"text": alert.get("alert", "")},
-                        "helpUri": alert.get("reference", ""),
-                        "properties": {"tags": ["security", "zap"]}
-                    }
-                for instance in alert.get("instances", []):
-                    location = {
-                        "physicalLocation": {
-                            "artifactLocation": {
-                                "uri": instance.get("uri", "")
-                            },
-                            "region": {
-                                "startLine": 1
-                            }
-                        }
-                    }
-                    result = {
-                        "ruleId": rule_id,
-                        "message": {"text": alert.get("description", "")},
-                        "locations": [location],
-                        "level": "warning"
-                    }
-                    results.append(result)
+              with open(sarif_path, "w") as f:
+                  json.dump(sarif, f, indent=2)
 
-            sarif["runs"][0]["tool"]["driver"]["rules"] = list(rules.values())
-            sarif["runs"][0]["results"] = results
+          convert_zap_json_to_sarif("zap-report.json", "zap-report.sarif")
+          EOF
 
-            with open(sarif_path, 'w') as f:
-                json.dump(sarif, f, indent=2)
+      - name: Upload ZAP SARIF report
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: zap-report.sarif
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-        convert_zap_json_to_sarif('zap-report.json', 'zap-report.sarif')
-        EOF
+      # === Semgrep Scan ===
+      - name: Run Semgrep Scan
+        uses: returntocorp/semgrep-action@v1
+        with:
+          output: semgrep-report.sarif
+          sarif: true
 
-    - name: Upload ZAP SARIF report
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: zap-report.sarif
-        token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload Semgrep SARIF report
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep-report.sarif
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-    # --- Trivy Scan ---
-    - name: Run Trivy Scan
-      run: |
-        docker run --rm -v ${{ github.workspace }}:/scan aquasec/trivy:latest fs --format json -o trivy-report.json /scan
-        ls -la
+      # === Grype Scan ===
+      - name: Run Grype Scan
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b $HOME/.local/bin
+          $HOME/.local/bin/grype dir:. -o sarif > grype-report.sarif
 
-    - name: Convert Trivy JSON to SARIF
-      run: |
-        # Пример конвертации trivy в sarif, проще всего использовать готовый скрипт или action
-        # Здесь — минимальный шаблон конвертации:
-        python3 <<'EOF'
-        import json
+      - name: Upload Grype SARIF report
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: grype-report.sarif
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-        def convert_trivy_to_sarif(trivy_path, sarif_path):
-            with open(trivy_path) as f:
-                data = json.load(f)
+      # === Trivy Scan ===
+      - name: Run Trivy Scan
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b $HOME/.local/bin
+          $HOME/.local/bin/trivy fs --format sarif --output trivy-report.sarif .
 
-            sarif = {
-                "version": "2.1.0",
-                "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
-                "runs": [{
-                    "tool": {
-                        "driver": {
-                            "name": "Trivy",
-                            "informationUri": "https://aquasecurity.github.io/trivy/",
-                            "rules": []
-                        }
-                    },
-                    "results": []
-                }]
-            }
-
-            rules = {}
-            results = []
-
-            for result in data.get("Results", []):
-                vuln_list = result.get("Vulnerabilities", [])
-                for vuln in vuln_list:
-                    rule_id = vuln.get("VulnerabilityID", "Unknown")
-                    if rule_id not in rules:
-                        rules[rule_id] = {
-                            "id": rule_id,
-                            "name": vuln.get("Title", ""),
-                            "shortDescription": {"text": vuln.get("Description", "")},
-                            "helpUri": vuln.get("PrimaryURL", ""),
-                            "properties": {"tags": ["security", "trivy"]}
-                        }
-                    result_item = {
-                        "ruleId": rule_id,
-                        "message": {"text": vuln.get("Description", "")},
-                        "level": "warning"
-                    }
-                    results.append(result_item)
-
-            sarif["runs"][0]["tool"]["driver"]["rules"] = list(rules.values())
-            sarif["runs"][0]["results"] = results
-
-            with open(sarif_path, "w") as f:
-                json.dump(sarif, f, indent=2)
-
-        convert_trivy_to_sarif("trivy-report.json", "trivy-report.sarif")
-        EOF
-
-    - name: Upload Trivy SARIF report
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: trivy-report.sarif
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-    # --- Grype Scan ---
-    - name: Run Grype Scan
-      run: |
-        docker run --rm -v ${{ github.workspace }}:/app anchore/grype:latest -o json -o /app/grype-report.json .
-        ls -la
-
-    - name: Convert Grype JSON to SARIF
-      run: |
-        python3 <<'EOF'
-        import json
-
-        def convert_grype_to_sarif(grype_path, sarif_path):
-            with open(grype_path) as f:
-                data = json.load(f)
-
-            sarif = {
-                "version": "2.1.0",
-                "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
-                "runs": [{
-                    "tool": {
-                        "driver": {
-                            "name": "Grype",
-                            "informationUri": "https://github.com/anchore/grype",
-                            "rules": []
-                        }
-                    },
-                    "results": []
-                }]
-            }
-
-            rules = {}
-            results = []
-
-            for match in data.get("matches", []):
-                vuln = match.get("vulnerability", {})
-                rule_id = vuln.get("id", "Unknown")
-                if rule_id not in rules:
-                    rules[rule_id] = {
-                        "id": rule_id,
-                        "name": vuln.get("dataSource", ""),
-                        "shortDescription": {"text": vuln.get("description", "")},
-                        "helpUri": vuln.get("links", [""])[0],
-                        "properties": {"tags": ["security", "grype"]}
-                    }
-                result_item = {
-                    "ruleId": rule_id,
-                    "message": {"text": vuln.get("description", "")},
-                    "level": "warning"
-                }
-                results.append(result_item)
-
-            sarif["runs"][0]["tool"]["driver"]["rules"] = list(rules.values())
-            sarif["runs"][0]["results"] = results
-
-            with open(sarif_path, "w") as f:
-                json.dump(sarif, f, indent=2)
-
-        convert_grype_to_sarif("grype-report.json", "grype-report.sarif")
-        EOF
-
-    - name: Upload Grype SARIF report
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: grype-report.sarif
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-    # --- Semgrep Scan ---
-    - name: Run Semgrep Scan
-      run: |
-        pip install semgrep
-        semgrep --config=auto --json --output semgrep-report.json ${{ github.workspace }}
-
-    - name: Upload Semgrep SARIF report
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: semgrep-report.json
-        token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload Trivy SARIF report
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-report.sarif
+          token: ${{ secrets.GITHUB_TOKEN }}
