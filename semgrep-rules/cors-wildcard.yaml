@@ -1,0 +1,16 @@
+# semgrep-rules/cors-wildcard.yaml
+rules:
+  - id: cors-wildcard-misconfiguration
+    message: |
+      Заголовок Access-Control-Allow-Origin установлен на "*", что разрешает доступ с любого домена.
+      Это может привести к уязвимостям Cross-Origin Resource Sharing (CORS), позволяя злоумышленникам
+      осуществлять межсайтовые запросы к вашему API.
+    severity: WARNING
+    languages:
+      - python
+    patterns:
+      - pattern: |
+          resp.headers["Access-Control-Allow-Origin"] = "*"
+    paths:
+      include:
+        - vAPI.py

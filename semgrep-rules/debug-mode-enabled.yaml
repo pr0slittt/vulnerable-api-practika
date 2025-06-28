@@ -1,0 +1,17 @@
+# semgrep-rules/debug-mode-enabled.yaml
+rules:
+  - id: debug-mode-information-disclosure
+    message: |
+      Приложение запущено в режиме отладки (debug=True), что может привести к раскрытию конфиденциальной информации
+      (трассировки стека, системные пути) в случае ошибок. Это серьезный риск безопасности в продакшене.
+    severity: ERROR
+    languages:
+      - python
+    patterns:
+      - pattern: |
+          run(..., debug=True, ...)
+      - pattern: |
+          debug(True)
+    paths:
+      include:
+        - vAPI.py

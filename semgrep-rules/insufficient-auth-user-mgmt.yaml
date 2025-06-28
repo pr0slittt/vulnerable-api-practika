@@ -1,0 +1,40 @@
+# semgrep-rules/insufficient-auth-user-mgmt.yaml
+rules:
+  - id: insufficient-authorization-user-management
+    message: |
+      Операции создания или удаления пользователей не имеют достаточных проверок авторизации (например, проверки роли администратора).
+      Это позволяет неавторизованным пользователям выполнять административные действия.
+    severity: ERROR
+    languages:
+      - python
+    patterns:
+      - pattern-either:
+          - patterns: # Используем 'patterns' для группировки 'pattern' и 'pattern-not'
+              - pattern: |
+                  @route("/user", method="POST")
+                  def create_user():
+                    ...
+                    if isinstance($TOKEN_RECORD, tuple) and $TOKEN_RECORD[3] >= int(time.time()):
+                      ...
+                      c.execute("INSERT INTO users (username, password) VALUES (?, ?)", ...)
+              - pattern-not: | # Это теперь под-элемент 'patterns'
+                  @route("/user", method="POST")
+                  def create_user():
+                    ...
+                    $TOKEN_RECORD[2] == 10
+          - patterns: # Используем 'patterns' для группировки 'pattern' и 'pattern-not'
+              - pattern: |
+                  @route("/user/<user_id>", method="DELETE")
+                  def delete_user_by_id(user_id):
+                    ...
+                    if isinstance($TOKEN_RECORD, tuple) and $TOKEN_RECORD[1] == str($TOKEN) and $TOKEN_RECORD[3] >= int(time.time()):
+                      ...
+                      delete_query = "DELETE FROM users WHERE id = '%s'" % ($USER_ID)
+              - pattern-not: | # Это теперь под-элемент 'patterns'
+                  @route("/user/<user_id>", method="DELETE")
+                  def delete_user_by_id(user_id):
+                    ...
+                    $TOKEN_RECORD[2] == 10
+    paths:
+      include:
+        - vAPI.py
