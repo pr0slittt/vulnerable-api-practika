@@ -220,24 +220,22 @@ jobs:
         continue-on-error: true # Позволяем пайплайну продолжать, даже если вход не удался
 
       - name: Create ZAP Reports Directory (No longer strictly needed for `zap-results/` but good practice)
-        run: mkdir -p zap-results # Создаем директорию для отчетов ZAP, хотя ZAP action будет писать в корень
+        run: mkdir -p zap-results # Создаем директорию для отчетов ZAP
 
       - name: Run OWASP ZAP Baseline Scan (GitHub Action)
-        id: run_owasp_zap_scan # Изменено ID шага
-        uses: zaproxy/action-baseline@v0.12.0 # Используем официальный GitHub Action для ZAP
+        id: run_owasp_zap_scan
+        uses: zaproxy/action-baseline@v0.13.0 # ОБНОВЛЕНО: Использование версии 0.13.0
         with:
           target: 'http://localhost:8081' # Целевой URL вашего приложения
-          # IMPORTANT: Based on your logs, 'sarif_filepath', 'html_filepath', 'json_filepath' are NOT valid inputs for this action version.
-          # We use 'cmd_options' to specify SARIF output. HTML/JSON will be in the workspace root.
-          cmd_options: '-s zap-baseline-report.sarif' # Генерируем SARIF в корне репозитория
-          # The action internally uses -J report_json.json -w report_md.md -r report_html.html
-          # These reports will be in the root of the workspace.
-          # artifact_name: 'zap-scan-results' # Optional: let ZAP action upload its own artifact, but we'll use a separate upload for SARIF and other specific reports.
+          sarif_output: true # Явно включаем вывод SARIF
+          sarif_file_name: 'zap-baseline-report.sarif' # Указываем имя SARIF файла
+          # HTML/JSON отчеты по умолчанию будут созданы как report_html.html и report_json.json в корне
+          artifact_name: 'zap-action-artifacts' # ОБНОВЛЕНО: Изменено имя артефакта, чтобы избежать конфликтов
         continue-on-error: true # Позволяем пайплайну продолжать, даже если ZAP найдет уязвимости
 
       - name: List files after ZAP scan
         run: |
-          echo "Listing files in current workspace (should now contain zap-baseline-report.sarif and other ZAP reports):"
+          echo "Listing files in current workspace (now should contain zap-baseline-report.sarif and other ZAP reports):"
           ls -l ${{ github.workspace }}
           if [ -f "zap-baseline-report.sarif" ]; then
             echo "zap-baseline-report.sarif content (first 100 lines):"
