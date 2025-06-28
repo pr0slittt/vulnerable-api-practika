@@ -185,8 +185,7 @@ jobs:
         uses: zaproxy/action-baseline@v0.12.0
         with:
           target: 'http://localhost:8081'
-          # sarif_file_name: 'owasp-zap-baseline-results.sarif' # УДАЛЕНО: Этот параметр не поддерживается
-          artifact_name: 'zap-scan' # ИЗМЕНЕНО: Новое, более простое имя для артефакта ZAP
+          artifact_name: 'zap-dast-reports' # Имя для ZIP-архива с отчетами ZAP (не SARIF)
           issue_title: ZAP Scan Baseline Report
           fail_action: false
           allow_issue_writing: true # ЭТОТ ПАРАМЕТР ЗАГРУЖАЕТ SARIF В GITHUB SECURITY И СОЗДАЕТ ISSUE
@@ -198,18 +197,14 @@ jobs:
           ls -l .
           echo "ZAP action should have created issue and uploaded SARIF to security tab if findings."
           echo "The action's 'artifact_name' input controls a zip file of JSON/MD/HTML reports, not the SARIF for CodeQL."
-          # Если вам нужно получить SARIF как отдельный артефакт,
-          # вам нужно будет использовать `cmd_options` для ZAP action,
-          # чтобы ZAP явно сгенерировал SARIF-файл по известному пути,
-          # а затем использовать actions/upload-artifact.
-          # В текущей конфигурации ZAP Action сам отправляет SARIF в Code Scanning.
+          echo "The SARIF upload to GitHub Security tab is handled by 'allow_issue_writing: true' directly by the ZAP Action."
 
-      - name: Upload OWASP ZAP SARIF as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: owasp-zap-baseline-sarif-report # Имя для артефакта с SARIF-отчетом
-          path: owasp-zap-baseline-results.sarif # Путь к файлу SARIF (предполагаем, что ZAP Action его создает)
-          retention-days: 5
+      # УДАЛЕНО: - name: Upload OWASP ZAP SARIF as Artifact
+      # УДАЛЕНО:   uses: actions/upload-artifact@v4
+      # УДАЛЕНО:   with:
+      # УДАЛЕНО:     name: owasp-zap-baseline-sarif-report
+      # УДАЛЕНО:     path: owasp-zap-baseline-results.sarif
+      # УДАЛЕНО:     retention-days: 5
 
       - name: Stop Vulnerable API (Cleanup)
         if: always()
