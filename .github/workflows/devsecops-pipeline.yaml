@@ -180,18 +180,38 @@ jobs:
           sleep 10
 
       - name: Run OWASP ZAP Baseline Scan and Save SARIF
-        id: zap_baseline_scan
-        uses: zaproxy/action-baseline@v0.12.0 # ИЗМЕНЕНО: Используем action-baseline
+        id: zap_baseline_scan_run # Добавлен ID
+        uses: zaproxy/action-baseline@v0.12.0
         with:
           target: 'http://localhost:8081'
-          sarif_file_name: 'owasp-zap-baseline-results.sarif' # ИЗМЕНЕНО: Параметр для SARIF
-        continue-on-error: true # Позволяем пайплайну продолжаться даже при ошибках сканирования ZAP
+          sarif_file_name: 'owasp-zap-baseline-results.sarif'
+        continue-on-error: true
+
+      - name: Check ZAP SARIF file existence and content
+        run: |
+          set -euxo pipefail
+          SARIF_OUTPUT_PATH="${{ github.workspace }}/owasp-zap-baseline-results.sarif"
+          echo "Checking ZAP SARIF output path: $SARIF_OUTPUT_PATH"
+          
+          if [ ! -f "$SARIF_OUTPUT_PATH" ]; then
+            echo "ERROR: owasp-zap-baseline-results.sarif was NOT created by ZAP Baseline Scan!"
+            # Выводим дополнительную отладочную информацию
+            echo "Current directory files:"
+            ls -l .
+            echo "Recursive listing of workspace:"
+            ls -lR ${{ github.workspace }}
+            exit 1 # Провалить шаг, если файл не найден
+          else
+            echo "OWASP ZAP SARIF file created. Size: $(du -h "$SARIF_OUTPUT_PATH" | awk '{print $1}')"
+            echo "First 100 lines of owasp-zap-baseline-results.sarif:"
+            head -n 100 "$SARIF_OUTPUT_PATH"
+          fi
 
       - name: Upload OWASP ZAP SARIF results to GitHub Security
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'owasp-zap-baseline-results.sarif' # ИЗМЕНЕНО: Имя файла SARIF
+          sarif_file: 'owasp-zap-baseline-results.sarif'
           wait-for-processing: true
 
       - name: Upload OWASP ZAP SARIF as Artifact
