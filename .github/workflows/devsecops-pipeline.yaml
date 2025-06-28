@@ -219,52 +219,59 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }} # Рекомендуется использовать секрет
         continue-on-error: true # Позволяем пайплайну продолжать, даже если вход не удался
 
-      - name: Create ZAP Reports Directory
-        run: mkdir -p zap-results # Создаем директорию для отчетов ZAP
+      - name: Create ZAP Reports Directory (No longer strictly needed for `zap-results/` but good practice)
+        run: mkdir -p zap-results # Создаем директорию для отчетов ZAP, хотя ZAP action будет писать в корень
 
       - name: Run OWASP ZAP Baseline Scan (GitHub Action)
         id: run_owasp_zap_scan # Изменено ID шага
         uses: zaproxy/action-baseline@v0.12.0 # Используем официальный GitHub Action для ZAP
         with:
           target: 'http://localhost:8081' # Целевой URL вашего приложения
-          # Включаем вывод отчетов в форматах SARIF, HTML и JSON в новую директорию
-          sarif_filepath: 'zap-results/zap-baseline-report.sarif'
-          html_filepath: 'zap-results/zap-baseline-report.html'
-          json_filepath: 'zap-results/zap-baseline-report.json'
-          # Опционально: Завершать работу с ошибкой, если ZAP находит предупреждения или ошибки
-          # issues_as_errors: true 
-          # cmd_options: '-config rules.conf' # Дополнительные опции ZAP CLI (если нужны)
+          # IMPORTANT: Based on your logs, 'sarif_filepath', 'html_filepath', 'json_filepath' are NOT valid inputs for this action version.
+          # We use 'cmd_options' to specify SARIF output. HTML/JSON will be in the workspace root.
+          cmd_options: '-s zap-baseline-report.sarif' # Генерируем SARIF в корне репозитория
+          # The action internally uses -J report_json.json -w report_md.md -r report_html.html
+          # These reports will be in the root of the workspace.
+          # artifact_name: 'zap-scan-results' # Optional: let ZAP action upload its own artifact, but we'll use a separate upload for SARIF and other specific reports.
         continue-on-error: true # Позволяем пайплайну продолжать, даже если ZAP найдет уязвимости
 
       - name: List files after ZAP scan
         run: |
-          echo "Listing files in zap-results/:"
-          ls -l zap-results/ # <-- КЛЮЧЕВОЙ ШАГ ОТЛАДКИ
-          if [ -f "zap-results/zap-baseline-report.sarif" ]; then
-            echo "zap-results/zap-baseline-report.sarif content (first 100 lines):"
-            head -n 100 "zap-results/zap-baseline-report.sarif"
+          echo "Listing files in current workspace (should now contain zap-baseline-report.sarif and other ZAP reports):"
+          ls -l ${{ github.workspace }}
+          if [ -f "zap-baseline-report.sarif" ]; then
+            echo "zap-baseline-report.sarif content (first 100 lines):"
+            head -n 100 "zap-baseline-report.sarif"
           else
-            echo "zap-results/zap-baseline-report.sarif NOT FOUND in zap-results/."
+            echo "zap-baseline-report.sarif NOT FOUND in workspace root. This is an error."
+            exit 1 # Fail the workflow if SARIF is not found here
+          fi
+          if [ -f "report_html.html" ]; then
+            echo "report_html.html found."
+          else
+            echo "report_html.html NOT FOUND in workspace root."
+          fi
+          if [ -f "report_json.json" ]; then
+            echo "report_json.json found."
+          else
+            echo "report_json.json NOT FOUND in workspace root."
           fi
 
       - name: Upload ZAP SARIF results to GitHub Security
         if: always() && success() # Загружаем отчет, если предыдущий шаг был успешен (не упал)
-        # ^^^^^^ ИЗМЕНЕНО: Добавлено `success()` чтобы избежать загрузки пустого/несуществующего файла
-        # если ZAP action сам завершился неудачно и не создал SARIF.
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'zap-results/zap-baseline-report.sarif' # Обновлен путь к SARIF файлу
+          sarif_file: 'zap-baseline-report.sarif' # Теперь файл ожидается в корневой директории
           wait-for-processing: true
-          # УДАЛЕНО: working-directory: ${{ github.workspace }} # Этот параметр не нужен и вызывает ошибку
 
       - name: Upload ZAP HTML/JSON Reports as Artifact
         if: always() # Загружаем артефакты, даже если предыдущие шаги завершились с ошибкой
         uses: actions/upload-artifact@v4
         with:
-          name: OWASP ZAP Reports # Изменено имя артефакта
+          name: ZAP-HTML-JSON-Reports # Уникальное имя артефакта
           path: |
-            zap-results/zap-baseline-report.html # Обновлен путь
-            zap-results/zap-baseline-report.json # Обновлен путь
+            report_html.html # Теперь файл ожидается в корневой директории
+            report_json.json # Теперь файл ожидается в корневой директории
           retention-days: 5 # Хранить артефакт 5 дней
 
       - name: Stop Vulnerable API (Cleanup)
