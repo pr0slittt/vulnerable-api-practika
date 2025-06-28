@@ -186,7 +186,7 @@ jobs:
         with:
           target: 'http://localhost:8081'
           # sarif_file_name: 'owasp-zap-baseline-results.sarif' # УДАЛЕНО: Этот параметр не поддерживается
-          artifact_name: 'zap-baseline-reports' # ИЗМЕНЕНО: Новое имя для артефакта, создаваемого ZAP Action
+          artifact_name: 'zap-report' # ИЗМЕНЕНО: Новое, более простое имя для артефакта ZAP
           issue_title: ZAP Scan Baseline Report
           fail_action: false
           allow_issue_writing: true # ЭТОТ ПАРАМЕТР ЗАГРУЖАЕТ SARIF В GITHUB SECURITY И СОЗДАЕТ ISSUE
