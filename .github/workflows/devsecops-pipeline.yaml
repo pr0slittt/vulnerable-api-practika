@@ -17,7 +17,7 @@ jobs:
       contents: read
       security-events: write
       packages: write
-    fail-fast: false # Остается, чтобы видеть все шаги даже при ошибках других инструментов
+    # fail-fast: false # <-- УДАЛЕНО: Этот параметр не поддерживается здесь и вызывал ошибку
 
     steps:
       - name: Checkout code
