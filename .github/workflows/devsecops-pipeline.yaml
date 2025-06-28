@@ -208,13 +208,18 @@ jobs:
       - name: Run OWASP ZAP Baseline Scan (Docker)
         run: |
           echo "Running OWASP ZAP Baseline Scan via Docker..."
+          # Запускаем ZAP Docker-образ, монтируя текущую рабочую директорию.
+          # Отчеты будут созданы непосредственно в корневой директории рабочего пространства.
           docker run --rm -v $(pwd):/zap/wrk/:rw owasp/zap2docker-stable \
-            zap-baseline.py \
-            -t http://localhost:8081 \
-            -J /zap/wrk/report_json.json \
-            -H /zap/wrk/report_html.html \
-            -r /zap/wrk/zap-baseline-report.sarif \
-            || true
+            bash -c "\
+              zap-baseline.py \
+              -t http://localhost:8081 \
+              -J /zap/wrk/report_json.json \
+              -H /zap/wrk/report_html.html \
+              -r /zap/wrk/zap-baseline-report.sarif; \
+              echo 'ZAP Baseline script exited with code: '$?'; \
+              ls -l /zap/wrk/ \
+            "
           
           echo "ZAP scan finished."
 
