@@ -9,36 +9,43 @@ on:
 jobs:
   security-scan:
     runs-on: ubuntu-latest
+    services:
+      vulnerable-api:
+        image: vulnerable-api-practika:latest
+        ports:
+          - 8081:8081
+        options: >-
+          --health-cmd "curl --fail http://localhost:8081 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Build Docker image for vulnerable API
-        run: docker build -t vulnerable-api:latest .
+      - name: Build vulnerable-api Docker image
+        run: docker build -t vulnerable-api-practika:latest .
 
-      - name: Create Docker network
-        run: docker network create zap-network
-
-      - name: Start vulnerable API container in network
+      - name: Wait for vulnerable-api service to be healthy
         run: |
-          docker run -d --name vulnerable-api --network zap-network -p 8081:8081 vulnerable-api:latest
-
-      - name: Wait for API to be ready (via localhost)
-        run: |
-          for i in {1..30}; do
-            if curl --fail http://localhost:8081; then
-              echo "API is up!"
-              break
+          for i in {1..20}; do
+            if curl --silent --fail http://localhost:8081; then
+              echo "Service is up!"
+              exit 0
             fi
-            echo "Waiting for API..."
-            sleep 2
+            echo "Waiting for service..."
+            sleep 5
           done
+          echo "Service did not start in time"
+          exit 1
 
-      - name: Run OWASP ZAP Baseline Scan in network
+      - name: Run OWASP ZAP Baseline Scan
         run: |
-          docker run --rm --network zap-network -v ${{ github.workspace }}:/zap/wrk/:rw owasp/zap2docker-stable zap-baseline.py \
-            -t http://vulnerable-api:8081 \
+          docker network create zap-network || true
+          docker network connect zap-network vulnerable-api-practika || true
+          docker run --rm --network zap-network -v ${{ github.workspace }}:/zap/wrk/:rw ghcr.io/zaproxy/zap2docker-stable zap-baseline.py \
+            -t http://vulnerable-api-practika:8081 \
             -J zap-report.json
 
       - name: Convert ZAP JSON to SARIF
@@ -103,7 +110,4 @@ jobs:
           sarif_file: zap-report.sarif
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Cleanup Docker containers and network
-        run: |
-          docker rm -f vulnerable-api || true
-          docker network rm zap-network || true
+      # Ты можешь добавить здесь аналогично другие сканеры (Semgrep, Grype, Trivy) как у тебя было
