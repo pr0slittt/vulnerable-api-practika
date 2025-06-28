@@ -17,7 +17,7 @@ jobs:
       contents: read
       security-events: write
       packages: write
-      issues: write # <-- Разрешение на запись задач, необходимо для ZAP Issue Creation
+      issues: write
 
     steps:
       - name: Checkout code
@@ -189,7 +189,6 @@ jobs:
           path: trivy-results.sarif
           retention-days: 5
 
-      # --- DAST Scan with OWASP ZAP Baseline Scan ---
       - name: Start Vulnerable API (vAPI.py) in background
         run: |
           echo "Starting vAPI.py in background..."
@@ -201,14 +200,13 @@ jobs:
           sleep 10
 
       - name: Run OWASP ZAP Baseline Scan
-        id: zap_baseline_scan_run # Важно: ID этого шага
+        id: zap_baseline_scan_run
         uses: zaproxy/action-baseline@v0.12.0
         with:
           target: 'http://localhost:8081'
-          # artifact_name: 'zap-dast-reports' # УДАЛЕНО: Этот параметр вызывает ошибку
           issue_title: ZAP Scan Baseline Report
           fail_action: false
-          allow_issue_writing: true # ЭТОТ ПАРАМЕТР ЗАГРУЖАЕТ SARIF В GITHUB SECURITY И СОЗДАЕТ ISSUE
+          allow_issue_writing: true
         continue-on-error: true
 
       - name: Verify ZAP Action Output
