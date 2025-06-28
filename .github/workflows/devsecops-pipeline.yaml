@@ -17,7 +17,8 @@ jobs:
       contents: read
       security-events: write
       packages: write
-      issues: write # <-- ДОБАВЛЕНО: Разрешение на запись задач
+      issues: write # <-- Разрешение на запись задач, необходимо для ZAP Issue Creation
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -179,60 +180,35 @@ jobs:
           echo "Waiting for vAPI.py to start (10 seconds)..."
           sleep 10
 
-      - name: Run OWASP ZAP Baseline Scan and Save SARIF
+      - name: Run OWASP ZAP Baseline Scan
         id: zap_baseline_scan_run # Важно: ID этого шага
         uses: zaproxy/action-baseline@v0.12.0
         with:
           target: 'http://localhost:8081'
-          sarif_file_name: 'owasp-zap-baseline-results.sarif' # Указываем имя файла SARIF
-        continue-on-error: true # Позволяем пайплайну продолжать, даже если ZAP Action выдаст ошибку
+          # sarif_file_name: 'owasp-zap-baseline-results.sarif' # УДАЛЕНО: Этот параметр не поддерживается
+          artifact_name: 'zap-baseline-reports' # ИЗМЕНЕНО: Новое имя для артефакта, создаваемого ZAP Action
+          issue_title: ZAP Scan Baseline Report
+          fail_action: false
+          allow_issue_writing: true # ЭТОТ ПАРАМЕТР ЗАГРУЖАЕТ SARIF В GITHUB SECURITY И СОЗДАЕТ ISSUE
+        continue-on-error: true
 
-      - name: Ensure ZAP SARIF file exists
+      - name: Verify ZAP Action Output
         run: |
-          set -euxo pipefail
-          ZAP_SARIF_PATH="${{ github.workspace }}/owasp-zap-baseline-results.sarif"
-          echo "Checking for ZAP SARIF file at: $ZAP_SARIF_PATH"
-          
-          if [ ! -f "$ZAP_SARIF_PATH" ]; then
-            echo "WARNING: ZAP SARIF file ($ZAP_SARIF_PATH) not found. Creating an empty SARIF file to proceed."
-            # Создаем минимальный, но валидный пустой SARIF-файл
-            # Это позволяет `upload-sarif` всегда получать файл, даже если ZAP не выдал отчет
-            echo '{
-              "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.5.json",
-              "version": "2.1.0",
-              "runs": [
-                {
-                  "tool": {
-                    "driver": {
-                      "name": "OWASP ZAP Baseline Scan",
-                      "fullName": "OWASP ZAP Baseline Scan (Generated Empty Report)",
-                      "version": "0.12.0"
-                    }
-                  },
-                  "results": []
-                }
-              ]
-            }' > "$ZAP_SARIF_PATH"
-            echo "Empty SARIF file created at $ZAP_SARIF_PATH"
-          else
-            echo "ZAP SARIF file found. Size: $(du -h "$ZAP_SARIF_PATH" | awk '{print $1}')"
-            echo "First 100 lines of ZAP SARIF:"
-            head -n 100 "$ZAP_SARIF_PATH"
-          fi
-
-      - name: Upload OWASP ZAP SARIF results to GitHub Security
-        if: always() # Всегда пытаться загрузить
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'owasp-zap-baseline-results.sarif' # Файл теперь гарантированно существует
-          wait-for-processing: true
-          working-directory: ${{ github.workspace }}
+          echo "Checking ZAP Action output files:"
+          ls -l .
+          echo "ZAP action should have created issue and uploaded SARIF to security tab if findings."
+          echo "The action's 'artifact_name' input controls a zip file of JSON/MD/HTML reports, not the SARIF for CodeQL."
+          # Если вам нужно получить SARIF как отдельный артефакт,
+          # вам нужно будет использовать `cmd_options` для ZAP action,
+          # чтобы ZAP явно сгенерировал SARIF-файл по известному пути,
+          # а затем использовать actions/upload-artifact.
+          # В текущей конфигурации ZAP Action сам отправляет SARIF в Code Scanning.
 
       - name: Upload OWASP ZAP SARIF as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: owasp-zap-baseline-sarif-report
-          path: 'owasp-zap-baseline-results.sarif' # Файл теперь гарантированно существует
+          name: owasp-zap-baseline-sarif-report # Имя для артефакта с SARIF-отчетом
+          path: owasp-zap-baseline-results.sarif # Путь к файлу SARIF (предполагаем, что ZAP Action его создает)
           retention-days: 5
 
       - name: Stop Vulnerable API (Cleanup)
