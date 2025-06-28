@@ -197,8 +197,23 @@ jobs:
           VAPI_PID=$!
           echo "vAPI.py started with PID: $VAPI_PID"
           echo "$VAPI_PID" > vapi_pid.txt
-          echo "Waiting for vAPI.py to start (10 seconds)..."
-          sleep 10
+          
+          # Health check loop for vAPI.py
+          echo "Waiting for vAPI.py to be accessible at http://localhost:8081..."
+          for i in $(seq 1 10); do # Try up to 10 times with 5-second intervals (total 50 seconds)
+            if curl --output /dev/null --silent --head --fail http://localhost:8081; then
+              echo "vAPI.py is up and running!"
+              break
+            else
+              echo "vAPI.py not yet available, waiting 5 seconds... (Attempt $i/10)"
+              sleep 5
+            fi
+            if [ $i -eq 10 ]; then
+              echo "ERROR: vAPI.py did not start within the expected time. Check vapi_output.log for details."
+              cat vapi_output.log
+              exit 1
+            fi
+          done
 
       - name: Log in to Docker Hub (Optional, for public image resilience)
         uses: docker/login-action@v3
@@ -210,21 +225,10 @@ jobs:
       - name: Run OWASP ZAP Baseline Scan via Docker CLI
         id: zap_baseline_scan_run_cli
         run: |
-          # Pull the ZAP Docker image with retry logic
-          for i in 1 2 3; do
-            echo "Attempt $i to pull owasp/zap2docker-stable:stable..."
-            docker pull owasp/zap2docker-stable:stable && break
-            sleep 10 # Wait for 10 seconds before retrying
-          done
-          # Check if the image pull was successful after retries
-          if ! docker images -q owasp/zap2docker-stable:stable | grep -q .; then
-            echo "ERROR: Failed to pull owasp/zap2docker-stable:stable after multiple attempts."
-            exit 1
-          fi
+          set -euxo pipefail # Strict error handling
+          echo "Starting ZAP scan via Docker run. PWD: $(pwd)"
           
-          # Run the ZAP baseline scan.
-          # Mount the current workspace to access the output files.
-          # Generate HTML, JSON, and SARIF reports explicitly.
+          # Run the ZAP baseline scan. docker run will implicitly pull the image if not present.
           docker run --rm -v ${{ github.workspace }}:/zap/wrk/:rw \
             owasp/zap2docker-stable:stable zap-baseline.py \
             -t http://localhost:8081 \
