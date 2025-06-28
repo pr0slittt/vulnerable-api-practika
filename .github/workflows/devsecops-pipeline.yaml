@@ -44,9 +44,10 @@ jobs:
           set -euxo pipefail
           echo "Starting Semgrep CLI scan. PWD: $(pwd)"
           
-          echo "Listing files recursively in current workspace:"
-          ls -lR ${{ github.workspace }}
-          echo "End of file listing."
+          echo "Listing files in current directory (should contain semgrep-rules/):"
+          ls -l .
+          echo "Listing files in app/ directory:"
+          ls -l ./app
 
           SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
           echo "Semgrep output path set to: $SARIF_OUTPUT_PATH"
@@ -167,24 +168,31 @@ jobs:
           path: trivy-results.sarif
           retention-days: 5
 
+      # --- DAST Scan with OWASP ZAP ---
       - name: Start Vulnerable API (vAPI.py) in background
         run: |
           echo "Starting vAPI.py in background..."
+          # Запускаем vAPI.py из папки app.
+          # nohup позволяет процессу продолжать работать после завершения скрипта bash.
+          # > vapi_output.log 2>&1 & перенаправляет stdout и stderr в файл и запускает в фоновом режиме.
           nohup python ./app/vAPI.py > vapi_output.log 2>&1 &
-          VAPI_PID=$!
+          VAPI_PID=$! # Сохраняем PID фонового процесса
           echo "vAPI.py started with PID: $VAPI_PID"
-          echo "$VAPI_PID" > vapi_pid.txt
+          echo "$VAPI_PID" > vapi_pid.txt # Сохраняем PID в файл для последующей остановки
           echo "Waiting for vAPI.py to start (10 seconds)..."
-          sleep 10
+          sleep 10 # Даем API время для запуска
 
       - name: Run OWASP ZAP Full Scan
         id: zap_scan
         uses: zaproxy/action-full-scan@v0.12.0
         with:
-          target: 'http://localhost:8081'
-          sarif_file_name: 'owasp-zap-results.sarif'
-          # Removed cmd_options as it may conflict with sarif_file_name
-        continue-on-error: true
+          target: 'http://localhost:8081' # Цель сканирования - локально запущенное API
+          # sarif_file_name: 'owasp-zap-results.sarif' # Параметр, который должен был работать
+          # cmd_options: '-s /zap/wrk/owasp-zap-results.sarif'
+          # Используем cmd_options для явного указания генерации SARIF-отчета
+          # '/zap/wrk/' - это монтированная папка, которая соответствует ${{ github.workspace }}
+          cmd_options: '-J report_json.json -w report_md.md -r report_html.html -s /zap/wrk/owasp-zap-results.sarif'
+        continue-on-error: true # Позволяем пайплайну продолжаться, даже если ZAP найдет уязвимости
 
       - name: List files after ZAP scan
         run: |
@@ -200,7 +208,7 @@ jobs:
           fi
 
       - name: Upload OWASP ZAP SARIF results to GitHub Security
-        if: always()
+        if: always() # Всегда пытаться загрузить SARIF
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'owasp-zap-results.sarif'
@@ -214,23 +222,24 @@ jobs:
           retention-days: 5
 
       - name: Stop Vulnerable API (Cleanup)
-        if: always()
+        if: always() # Выполнять всегда, даже если предыдущие шаги завершились неудачно
         run: |
           if [ -f vapi_pid.txt ]; then
             VAPI_PID=$(cat vapi_pid.txt)
             echo "Stopping vAPI.py with PID: $VAPI_PID"
-            kill $VAPI_PID || true
-            sleep 2
-            if ps -p $VAPI_PID > /dev/null; then
+            kill $VAPI_PID || true # Попытка мягкой остановки
+            sleep 2 # Даем время на остановку
+            if ps -p $VAPI_PID > /dev/null; then # Проверяем, все еще ли процесс запущен
               echo "Process $VAPI_PID is still running, forcing kill."
-              kill -9 $VAPI_PID || true
+              kill -9 $VAPI_PID || true # Принудительная остановка
             else
               echo "Process $VAPI_PID stopped successfully."
             fi
-            rm vapi_pid.txt
+            rm vapi_pid.txt # Удаляем файл PID
           else
             echo "vapi_pid.txt not found, possibly vAPI.py was not started or already stopped."
           fi
+          # Выводим содержимое лог-файла API для отладки
           if [ -f vapi_output.log ]; then
             echo "--- vAPI.py Output Log ---"
             cat vapi_output.log
