@@ -182,6 +182,12 @@ jobs:
           path: trivy-results.sarif
           retention-days: 5
 
+      - name: Install OWASP ZAP
+        run: |
+          echo "Installing OWASP ZAP via snap..."
+          sudo snap install zaproxy --classic
+          echo "OWASP ZAP installed."
+
       - name: Start Vulnerable API (vAPI.py) in background
         run: |
           echo "Starting vAPI.py in background..."
@@ -205,24 +211,17 @@ jobs:
             fi
           done
 
-      - name: Pull OWASP ZAP Docker Image
+      - name: Run OWASP ZAP Baseline Scan (Direct Install)
         run: |
-          echo "Attempting to pull owasp/zap2docker-stable image..."
-          docker pull owasp/zap2docker-stable
-
-      - name: Run OWASP ZAP Baseline Scan (Docker)
-        run: |
-          echo "Running OWASP ZAP Baseline Scan via Docker..."
-          docker run --rm -v $(pwd):/zap/wrk/:rw owasp/zap2docker-stable \
-            bash -c "\
-              zap-baseline.py \
-              -t http://localhost:8081 \
-              -J /zap/wrk/report_json.json \
-              -H /zap/wrk/report_html.html \
-              -r /zap/wrk/zap-baseline-report.sarif; \
-              echo 'ZAP Baseline script exited with code: '$?'; \
-              ls -l /zap/wrk/ \
-            "
+          echo "Running OWASP ZAP Baseline Scan via direct install..."
+          # `zap-baseline.py` должен быть доступен в PATH после установки snap zaproxy
+          zap-baseline.py \
+            -t http://localhost:8081 \
+            -J report_json.json \
+            -H report_html.html \
+            -r zap-baseline-report.sarif; \
+          echo 'ZAP Baseline script exited with code: '$?'; \
+          ls -l \
           
           echo "ZAP scan finished."
 
