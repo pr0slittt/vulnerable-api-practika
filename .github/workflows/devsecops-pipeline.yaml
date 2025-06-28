@@ -58,7 +58,6 @@ jobs:
           sarif_file: 'grype-results.sarif'
           wait-for-processing: true
       
-      # НОВОЕ: Загрузка Grype SARIF как артефакта
       - name: Upload Grype SARIF as Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -74,8 +73,9 @@ jobs:
       - name: Run Semgrep SAST Scan
         run: |
           set -euxo pipefail # Добавлено для более строгой отладки
+          # ИЗМЕНЕНО: Теперь вывод Semgrep направляется в jq для форматирования, а затем в файл.
           semgrep --config "p/python" --config "p/security-audit" \
-            --sarif -o "${{ github.workspace }}/semgrep-results.sarif" ./app || true
+            --sarif ./app | jq . > "${{ github.workspace }}/semgrep-results.sarif" || true
           
       - name: List files after Semgrep scan
         run: |
@@ -94,7 +94,6 @@ jobs:
           sarif_file: 'semgrep-results.sarif'
           wait-for-processing: true
 
-      # НОВОЕ: Загрузка Semgrep SARIF как артефакта
       - name: Upload Semgrep SARIF as Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -137,7 +136,6 @@ jobs:
           sarif_file: 'trivy-results.sarif'
           wait-for-processing: true
       
-      # НОВОЕ: Загрузка Trivy SARIF как артефакта
       - name: Upload Trivy SARIF as Artifact
         uses: actions/upload-artifact@v4
         with:
