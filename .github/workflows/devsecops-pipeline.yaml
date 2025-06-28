@@ -15,162 +15,136 @@ jobs:
       packages: write
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-    - name: Install Semgrep CLI
-      run: |
-        pip install "semgrep>=1.76.0"
-        semgrep --version
+      # --- SEMGREP ---
+      - name: Install Semgrep CLI
+        run: |
+          pip install "semgrep>=1.76.0"
+          semgrep --version
 
-    - name: Run Semgrep SAST Scan
-      id: semgrep_scan_run
-      run: |
-        echo "Starting Semgrep CLI scan"
-        SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
-        semgrep \
-          --config "p/python" \
-          --config "p/security-audit" \
-          --config "semgrep-rules/" \
-          --sarif -o "$SARIF_OUTPUT_PATH" \
-          ./app \
-          --verbose || true
-        echo "semgrep_exit_code=$?" >> "$GITHUB_OUTPUT"
+      - name: Run Semgrep SAST Scan
+        id: semgrep_scan_run
+        run: |
+          SARIF_OUTPUT_PATH="semgrep-results.sarif"
+          semgrep \
+            --config "p/python" \
+            --config "p/security-audit" \
+            --config "semgrep-rules/" \
+            --sarif -o "$SARIF_OUTPUT_PATH" \
+            ./app --verbose || true
 
-    - name: Upload Semgrep SARIF results to GitHub Security
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: 'semgrep-results.sarif'
-        wait-for-processing: true
-
-    - name: Upload Semgrep SARIF as Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: semgrep-sarif-report
-        path: semgrep-results.sarif
-        retention-days: 5
-
-    - name: Cache Grype DB
-      uses: actions/cache@v3
-      with:
-        path: ~/.grype/db
-        key: ${{ runner.os }}-grype-db-${{ hashFiles('grype-db-version.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-grype-db-
-
-    - name: Create Grype DB Version File
-      run: echo "1" > grype-db-version.txt
-
-    - name: Download Grype
-      run: |
-        curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
-        grype version
-
-    - name: Run Grype SCA Scan and Save SARIF
-      id: grype_scan_run
-      run: |
-        GRYPE_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
-        grype dir:./app -o sarif --file "$GRYPE_OUTPUT_PATH" || true
-        echo "grype_exit_code=$?" >> "$GITHUB_OUTPUT"
-
-    - name: Upload SARIF results to GitHub Security tab (Grype)
-      if: always()
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: 'grype-results.sarif'
-        wait-for-processing: true
-
-    - name: Upload Grype SARIF as Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: grype-sarif-report
-        path: grype-results.sarif
-        retention-days: 5
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Build Docker Image
-      run: |
-        docker build -t vulnerable-api:latest .
-
-    - name: Run Trivy Container Scan
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: 'vulnerable-api:latest'
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-        severity: 'HIGH,CRITICAL'
-        ignore-unfixed: true
-      continue-on-error: true
-
-    - name: Upload Trivy SARIF results to GitHub Security
-      if: always()
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: 'trivy-results.sarif'
-        wait-for-processing: true
-
-    - name: Upload Trivy SARIF as Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: trivy-sarif-report
-        path: trivy-results.sarif
-        retention-days: 5
-
-    # ✅ OWASP ZAP — Start vulnerable app and scan it
-
-    - name: Run vulnerable container for ZAP scanning
-      run: |
-        docker run -d --name vulnerable-api-zap -p 8081:80 vulnerable-api:latest
-
-    - name: Wait for app to be ready (ZAP target)
-      run: |
-        echo "Waiting for http://localhost:8081 to become available..."
-        for i in {1..30}; do
-          if curl -s http://localhost:8081 > /dev/null; then
-            echo "Target app is up!"
-            break
+          if [ ! -f "$SARIF_OUTPUT_PATH" ]; then
+            echo "Semgrep SARIF not created!"
+            exit 1
           fi
-          echo "Waiting... ($i)"
-          sleep 3
-        done
 
-    - name: Run OWASP ZAP Baseline Scan via Docker
-      run: |
-        echo "Starting OWASP ZAP Baseline Scan"
-        docker run --network="host" -v $(pwd):/zap/wrk/:rw -t owasp/zap2docker-stable zap-baseline.py \
-          -t http://localhost:8081 \
-          -J report_json.json \
-          -H report_html.html \
-          -r zap-baseline-report.sarif
+      - name: Upload Semgrep SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep-results.sarif
 
-    - name: Upload ZAP SARIF report to GitHub Security
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: 'zap-baseline-report.sarif'
-        wait-for-processing: true
+      - name: Upload Semgrep SARIF as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-sarif-report
+          path: semgrep-results.sarif
+          retention-days: 5
 
-    - name: Upload ZAP Reports (HTML/JSON)
-      uses: actions/upload-artifact@v4
-      with:
-        name: zap-reports
-        path: |
-          report_html.html
-          report_json.json
-          zap-baseline-report.sarif
-        retention-days: 5
+      # --- GRYPE ---
+      - name: Cache Grype DB
+        uses: actions/cache@v3
+        with:
+          path: ~/.grype/db
+          key: ${{ runner.os }}-grype-db-v1
 
-    - name: Stop and remove vulnerable container
-      if: always()
-      run: docker rm -f vulnerable-api-zap
+      - name: Install Grype
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
+          grype version
+
+      - name: Run Grype SCA Scan
+        run: |
+          GRYPE_OUTPUT_PATH="grype-results.sarif"
+          grype dir:./app -o sarif --file "$GRYPE_OUTPUT_PATH" || true
+
+          if [ ! -f "$GRYPE_OUTPUT_PATH" ]; then
+            echo "Grype SARIF not created!"
+            exit 1
+          fi
+
+      - name: Upload Grype SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: grype-results.sarif
+
+      - name: Upload Grype SARIF as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: grype-sarif-report
+          path: grype-results.sarif
+          retention-days: 5
+
+      # --- TRIVY ---
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Image
+        run: docker build -t vulnerable-api:latest .
+
+      - name: Run Trivy Container Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'vulnerable-api:latest'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+        continue-on-error: true
+
+      - name: Upload Trivy SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Upload Trivy SARIF as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sarif-report
+          path: trivy-results.sarif
+          retention-days: 5
+
+      # --- OWASP ZAP ---
+      - name: Run OWASP ZAP Baseline Scan via Docker
+        run: |
+          echo "Starting OWASP ZAP Baseline Scan"
+          docker run --rm --network="host" \
+            -v $(pwd):/zap/wrk/:rw \
+            ghcr.io/zaproxy/zap-stable:latest zap-baseline.py \
+            -t http://localhost:8081 \
+            -J zap-report.json \
+            -H zap-report.html \
+            -r zap-report.sarif || true
+
+      - name: Upload ZAP SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: zap-report.sarif
+
+      - name: Upload ZAP SARIF as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-sarif-report
+          path: zap-report.sarif
+          retention-days: 5
