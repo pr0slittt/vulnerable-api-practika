@@ -44,17 +44,13 @@ jobs:
           set -euxo pipefail
           echo "Starting Semgrep CLI scan. PWD: $(pwd)"
           
-          # Отладочный вывод: Список файлов в текущей директории и в папке app
-          echo "Listing files in current directory (should contain semgrep-rules/):"
-          ls -l .
-          echo "Listing files in app/ directory:"
-          ls -l ./app
+          echo "Listing files recursively in current workspace:"
+          ls -lR ${{ github.workspace }}
+          echo "End of file listing."
 
           SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
           echo "Semgrep output path set to: $SARIF_OUTPUT_PATH"
 
-          # Выполнение Semgrep с детальным логированием (используйте --debug или --verbose)
-          # --verbose выводит информацию о загруженных правилах и пропусках
           semgrep \
             --config "p/python" \
             --config "p/security-audit" \
@@ -62,7 +58,7 @@ jobs:
             --sarif \
             -o "$SARIF_OUTPUT_PATH" \
             ./app \
-            --verbose || true # <-- ДОБАВЛЕНО: --verbose для детального логирования
+            --verbose || true
           
           SEMGREP_EXIT_CODE=$?
           echo "Semgrep scan finished. Raw exit code: $SEMGREP_EXIT_CODE"
@@ -73,12 +69,10 @@ jobs:
             echo "ERROR: semgrep-results.sarif was NOT created by Semgrep!"
             exit 1
           else
-            # Отладочный вывод: Размер SARIF-файла
             echo "Semgrep SARIF file created. Size: $(du -h "$SARIF_OUTPUT_PATH" | awk '{print $1}')"
             echo "First 100 lines of semgrep-results.sarif:"
             head -n 100 "$SARIF_OUTPUT_PATH"
           fi
-
 
       - name: Upload Semgrep SARIF results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
@@ -172,3 +166,57 @@ jobs:
           name: trivy-sarif-report
           path: trivy-results.sarif
           retention-days: 5
+
+      - name: Install Nikto
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nikto
+          nikto -V
+
+      - name: Start Vulnerable API (vAPI.py) in background
+        run: |
+          echo "Starting vAPI.py in background..."
+          nohup python ./app/vAPI.py > vapi_output.log 2>&1 &
+          VAPI_PID=$!
+          echo "vAPI.py started with PID: $VAPI_PID"
+          echo "$VAPI_PID" > vapi_pid.txt
+          echo "Waiting for vAPI.py to start (5 seconds)..."
+          sleep 5
+
+      - name: Run Nikto DAST Scan
+        run: |
+          echo "Running Nikto scan against http://localhost:8081"
+          nikto -h http://localhost:8081 -o nikto-results.txt || true
+          echo "Nikto scan completed. Results saved to nikto-results.txt"
+          cat nikto-results.txt
+
+      - name: Upload Nikto DAST Report as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nikto-dast-report
+          path: nikto-results.txt
+          retention-days: 5
+
+      - name: Stop Vulnerable API (Cleanup)
+        if: always()
+        run: |
+          if [ -f vapi_pid.txt ]; then
+            VAPI_PID=$(cat vapi_pid.txt)
+            echo "Stopping vAPI.py with PID: $VAPI_PID"
+            kill $VAPI_PID || true
+            sleep 2
+            if ps -p $VAPI_PID > /dev/null; then
+              echo "Process $VAPI_PID is still running, forcing kill."
+              kill -9 $VAPI_PID || true
+            else
+              echo "Process $VAPI_PID stopped successfully."
+            fi
+            rm vapi_pid.txt
+          else
+            echo "vapi_pid.txt not found, possibly vAPI.py was not started or already stopped."
+          fi
+          if [ -f vapi_output.log ]; then
+            echo "--- vAPI.py Output Log ---"
+            cat vapi_output.log
+            echo "--- End of vAPI.py Output Log ---"
+          fi
