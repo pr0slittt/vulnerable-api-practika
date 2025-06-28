@@ -57,6 +57,14 @@ jobs:
         with:
           sarif_file: 'grype-results.sarif'
           wait-for-processing: true
+      
+      # НОВОЕ: Загрузка Grype SARIF как артефакта
+      - name: Upload Grype SARIF as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: grype-sarif-report
+          path: grype-results.sarif
+          retention-days: 5 # Хранить артефакт 5 дней
 
       - name: Install Semgrep CLI
         run: |
@@ -67,7 +75,7 @@ jobs:
         run: |
           set -euxo pipefail # Добавлено для более строгой отладки
           semgrep --config "p/python" --config "p/security-audit" \
-            --sarif -o "${{ github.workspace }}/semgrep-results.sarif" ./app || true # <-- ИЗМЕНЕНО: Вернул --sarif
+            --sarif -o "${{ github.workspace }}/semgrep-results.sarif" ./app || true
           
       - name: List files after Semgrep scan
         run: |
@@ -86,6 +94,14 @@ jobs:
           sarif_file: 'semgrep-results.sarif'
           wait-for-processing: true
 
+      # НОВОЕ: Загрузка Semgrep SARIF как артефакта
+      - name: Upload Semgrep SARIF as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-sarif-report
+          path: semgrep-results.sarif
+          retention-days: 5 # Хранить артефакт 5 дней
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -94,8 +110,6 @@ jobs:
           docker build -t vulnerable-api:latest .
 
       - name: Run Trivy Container Scan
-        # Удален 'run: |' и 'set -euxo pipefail' из этого блока,
-        # так как 'uses' должен быть на том же уровне, что и 'name'.
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: 'vulnerable-api:latest'
@@ -121,4 +135,12 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
-          wait-for-processing: true 
+          wait-for-processing: true
+      
+      # НОВОЕ: Загрузка Trivy SARIF как артефакта
+      - name: Upload Trivy SARIF as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sarif-report
+          path: trivy-results.sarif
+          retention-days: 5 # Хранить артефакт 5 дней
