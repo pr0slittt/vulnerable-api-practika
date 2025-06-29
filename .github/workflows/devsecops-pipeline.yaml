@@ -10,10 +10,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Log in to GitHub Container Registry
+      - name: Login to GitHub Container Registry
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
@@ -23,20 +23,20 @@ jobs:
       - name: Create Docker network
         run: docker network create zap-net || true
 
-      - name: Start vulnerable-api container
+      - name: Run vulnerable-api container
         run: |
           docker run -d --rm --network zap-net --name vulnerable-api \
             ghcr.io/pr0slittt/vulnerable-api-practika:latest
 
-      - name: Wait for API to be ready
+      - name: Wait for vulnerable-api to be ready
         run: |
-          for i in {1..20}; do
-            if curl -s http://localhost:8081 > /dev/null; then
+          for i in {1..15}; do
+            if curl -s http://localhost:8081; then
               echo "API is up"
               break
             else
               echo "Waiting for API..."
-              sleep 3
+              sleep 2
             fi
           done
 
@@ -44,14 +44,11 @@ jobs:
         run: |
           docker run --rm --network zap-net \
             -v "${{ github.workspace }}":/zap/wrk/:rw \
-            ghcr.io/zaproxy/zap2docker-stable \
+            owasp/zap2docker-stable \
             zap-baseline.py -t http://vulnerable-api:8081 -J zap-report.json
 
       - name: Upload ZAP report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: zap-report
           path: zap-report.json
-
-      - name: Cleanup Docker network
-        run: docker network rm zap-net || true
