@@ -1,4 +1,4 @@
-name: OWASP ZAP Scan 
+name: OWASP ZAP Scan
 
 on:
   push:
@@ -50,19 +50,9 @@ jobs:
       - name: Show vulnerable-api logs
         run: docker logs vulnerable-api || echo "No logs"
 
-      - name: Run OWASP ZAP baseline scan
+      - name: Run OWASP ZAP baseline scan (без отчёта)
         run: |
           docker pull ghcr.io/zaproxy/zaproxy:stable
           docker run --rm --network zap-net \
-            -v "${{ github.workspace }}":/zap/wrk/:rw \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py -t http://vulnerable-api:8081 -J /zap/wrk/zap-report.json
-
-      - name: Check if zap-report.json exists
-        run: ls -l "${{ github.workspace }}/zap-report.json"
-
-      - name: Upload ZAP report
-        uses: actions/upload-artifact@v4
-        with:
-          name: zap-report
-          path: zap-report.json
+            zap-baseline.py -t http://vulnerable-api:8081
