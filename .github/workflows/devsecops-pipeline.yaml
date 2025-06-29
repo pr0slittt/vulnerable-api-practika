@@ -48,7 +48,7 @@ jobs:
         run: |
           docker run --rm --network zap-net \
             -v "${{ github.workspace }}":/zap/wrk/:rw \
-            owasp/zap2docker-stable \
+            owasp/zap2docker-weekly \
             zap-baseline.py -t http://localhost:8081 -J zap-report.json
 
       - name: Upload ZAP report
