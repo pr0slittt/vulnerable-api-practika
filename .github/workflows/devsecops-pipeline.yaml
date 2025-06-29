@@ -54,5 +54,14 @@ jobs:
         run: |
           docker pull ghcr.io/zaproxy/zaproxy:stable
           docker run --rm --network zap-net \
+            -v ${{ github.workspace }}:/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py -t http://vulnerable-api:8081 -I
+            zap-baseline.py -t http://vulnerable-api:8081 -J /zap/wrk/zap-report.json -r /zap/wrk/zap-report.html -I
+
+      - name: Upload ZAP reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: zap-reports
+          path: |
+            zap-report.json
+            zap-report.html
