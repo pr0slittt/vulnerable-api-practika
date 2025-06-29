@@ -8,36 +8,16 @@ rules:
     languages:
       - python
     patterns:
-      # Главный паттерн, ищущий функцию маршрута /tokens с методом GET
+      # Совпадает с любой функцией, обслуживающей GET /tokens и выполняющей SELECT из таблицы users
       - pattern: |
           @route("/tokens", method="GET")
           def $FUNC_NAME():
-            $SETUP_CODE
-            $DB_CURSOR.execute($SQL_QUERY)
-            $FETCHED_DATA = $DB_CURSOR.$FETCH_METHOD()
-            $RETURN_STATEMENT
-            $TEARDOWN_CODE
-
-      # Отдельное определение для метапеременной $SQL_QUERY
+            ...
+            $CURSOR.execute($QUERY)
+            ...
       - metavariable-pattern:
-          metavariable: $SQL_QUERY
+          metavariable: $QUERY
           pattern-regex: 'SELECT\s+.*?\s+FROM\s+users'
-
-      # Отдельное определение для метапеременной $FETCH_METHOD
-      - metavariable-pattern:
-          metavariable: $FETCH_METHOD
-          pattern-either:
-            - pattern: fetchall()
-            - pattern: fetchone()
-
-      # Отдельное определение для метапеременной $RETURN_STATEMENT
-      - metavariable-pattern:
-          metavariable: $RETURN_STATEMENT
-          pattern-either:
-            - pattern: 'return $FETCHED_DATA' # Возврат напрямую
-            - pattern: 'return {"response": $FETCHED_DATA}' # Возврат в словаре с ключом "response"
-            - pattern: 'return {"$KEY": $FETCHED_DATA}' # Возврат в словаре с любым ключом
-
     paths:
       include:
         - vAPI.py
