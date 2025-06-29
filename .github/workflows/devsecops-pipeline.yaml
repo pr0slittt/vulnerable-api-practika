@@ -40,6 +40,10 @@ jobs:
             fi
           done
 
+      - name: Show vulnerable-api logs (for debugging)
+        run: |
+          docker logs vulnerable-api || echo "No logs available or container stopped"
+
       - name: Run OWASP ZAP baseline scan
         run: |
           docker run --rm --network zap-net \
