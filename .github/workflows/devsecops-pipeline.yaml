@@ -70,3 +70,65 @@ jobs:
             zap-report.html
             zap-report.json
             zap-report.xml
+
+      - name: Install Semgrep CLI
+        run: |
+          set -euxo pipefail
+          pip install "semgrep>=1.76.0"
+          semgrep --version
+
+      - name: Run Semgrep SAST Scan
+        id: semgrep_scan_run
+        run: |
+          set -euxo pipefail
+          echo "Starting Semgrep CLI scan. PWD: $(pwd)"
+          
+          # Отладочный вывод: Список файлов в текущей директории и в папке app
+          echo "Listing files in current directory (should contain semgrep-rules/):"
+          ls -l .
+          echo "Listing files in app/ directory:"
+          ls -l ./app
+
+          SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
+          echo "Semgrep output path set to: $SARIF_OUTPUT_PATH"
+
+          # Выполнение Semgrep с детальным логированием (используйте --debug или --verbose)
+          # --verbose выводит информацию о загруженных правилах и пропусках
+          semgrep \
+            --config "p/python" \
+            --config "p/security-audit" \
+            --config "semgrep-rules/" \
+            --sarif \
+            -o "$SARIF_OUTPUT_PATH" \
+            ./app \
+            --verbose || true # <-- ДОБАВЛЕНО: --verbose для детального логирования
+          
+          SEMGREP_EXIT_CODE=$?
+          echo "Semgrep scan finished. Raw exit code: $SEMGREP_EXIT_CODE"
+          
+          echo "semgrep_exit_code=$SEMGREP_EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+          if [ ! -f "$SARIF_OUTPUT_PATH" ]; then
+            echo "ERROR: semgrep-results.sarif was NOT created by Semgrep!"
+            exit 1
+          else
+            # Отладочный вывод: Размер SARIF-файла
+            echo "Semgrep SARIF file created. Size: $(du -h "$SARIF_OUTPUT_PATH" | awk '{print $1}')"
+            echo "First 100 lines of semgrep-results.sarif:"
+            head -n 100 "$SARIF_OUTPUT_PATH"
+          fi
+
+
+      - name: Upload Semgrep SARIF results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'semgrep-results.sarif'
+          wait-for-processing: true
+          working-directory: ${{ github.workspace }}
+
+      - name: Upload Semgrep SARIF as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-sarif-report
+          path: semgrep-results.sarif
+          retention-days: 5

@@ -8,10 +8,16 @@ rules:
     languages:
       - python
     patterns:
-      - pattern: |
-          run(..., debug=True, ...)
-      - pattern: |
-          debug(True)
+      - pattern-either:
+          # Паттерн для `run(..., debug=True, ...)`
+          - pattern: |
+              $APP_VAR.run(..., debug=True, ...)
+          # Паттерн для `debug(True)`
+          - pattern: |
+              debug(True)
+          # Паттерн для присвоения значения debug переменной
+          - pattern: |
+              $VAR.debug = True
     paths:
       include:
         - vAPI.py

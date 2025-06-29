@@ -8,17 +8,18 @@ rules:
     languages:
       - python
     patterns:
-      - pattern: |
+      - pattern-inside: |
           @route("/tokens", method="GET")
           def get_get_token():
             ...
-            query = "SELECT ... FROM users"
-            ...
-            return {"response": $USERS}
+            c.execute("SELECT $ANY_COLUMNS FROM users") # Ищем выборку из таблицы users
+            $USERS_DATA = c.fetchall() # Результат fetchall()
+            return {"response": $USERS_DATA} # Возврат данных в ответе
+      # Убеждаемся, что переменная $USERS_DATA действительно содержит результат c.fetchall()
       - metavariable-pattern:
-          metavariable: $USERS
+          metavariable: $USERS_DATA
           pattern: |
-            users = c.fetchall()
+            $SOME_VAR = c.fetchall()
     paths:
       include:
         - vAPI.py

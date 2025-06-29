@@ -8,38 +8,41 @@ rules:
     languages:
       - python
     patterns:
-      - pattern-either: # Проверяем эндпоинты, которые должны проверять токен
-          - pattern: |
+      # Проверяем эндпоинт GET /user/<user_id>
+      - patterns:
+          - pattern-inside: |
               @route("/user/<user_id>", method="GET")
               def get_user(user_id):
                 ...
                 token_record = c.fetchone()
                 if isinstance(token_record, tuple) and token_record[1] == str($TOKEN):
-                  # Отсутствует проверка: token_record[3] < int(time.time())
                   ...
-                  $QUERY_EXECUTION
-          - pattern: |
+          # Убеждаемся, что внутри этого блока НЕ ПРИСУТСТВУЕТ проверка срока действия токена
+          - pattern-not: |
+              $TOKEN_RECORD[3] >= int(time.time())
+      # Проверяем эндпоинт POST /user (для создания)
+      - patterns:
+          - pattern-inside: |
               @route("/user", method="POST")
               def create_user():
                 ...
                 token_record = c.fetchone()
-                if isinstance(token_record, tuple):
-                  # Отсутствует проверка: token_record[3] < int(time.time())
+                # Добавлено условие проверки токена, если оно присутствует в вашем коде
+                if isinstance(token_record, tuple) and token_record[1] == str($TOKEN):
                   ...
-                  $QUERY_EXECUTION
-          - pattern: |
+          - pattern-not: |
+              $TOKEN_RECORD[3] >= int(time.time())
+      # Проверяем эндпоинт DELETE /user/<user_id>
+      - patterns:
+          - pattern-inside: |
               @route("/user/<user_id>", method="DELETE")
               def delete_user_by_id(user_id):
                 ...
                 token_record = c.fetchone()
                 if isinstance(token_record, tuple) and token_record[1] == str($TOKEN):
-                  # Отсутствует проверка: token_record[3] < int(time.time())
                   ...
-                  $QUERY_EXECUTION
-    # Исключаем конкретно эндпоинт /tokens POST, так как там есть логика работы со сроком действия,
-    # и мы сфокусированы на отсутствии проверки в других местах, где токен используется.
+          - pattern-not: |
+              $TOKEN_RECORD[3] >= int(time.time())
     paths:
       include:
         - vAPI.py
-      exclude:
-        - vAPI.py:tokens.py # Исключаем файл, если он существовал бы отдельно
