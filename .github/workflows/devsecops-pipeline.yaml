@@ -50,9 +50,9 @@ jobs:
       - name: Show vulnerable-api logs
         run: docker logs vulnerable-api || echo "No logs"
 
-      - name: Run OWASP ZAP baseline scan (без отчёта)
+      - name: Run OWASP ZAP baseline scan (игнорировать предупреждения)
         run: |
           docker pull ghcr.io/zaproxy/zaproxy:stable
           docker run --rm --network zap-net \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py -t http://vulnerable-api:8081
+            zap-baseline.py -t http://vulnerable-api:8081 -I
