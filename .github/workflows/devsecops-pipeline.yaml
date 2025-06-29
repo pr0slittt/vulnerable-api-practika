@@ -53,8 +53,9 @@ jobs:
       - name: Run OWASP ZAP baseline scan (игнорировать предупреждения)
         run: |
           docker pull ghcr.io/zaproxy/zaproxy:stable
+          # ИСПРАВЛЕНО: Убран пробел после символа продолжения строки '\' перед '--user 0'
           docker run --rm --network zap-net \
-          --user 0 \  # <-- Убедитесь, что нет пробела после '\' и нет лишних пробелов перед '--user'
+          --user 0 \
           -v "/home/runner/work/vulnerable-api-practika/vulnerable-api-practika":/zap/wrk:rw \
           -v "/home/runner/work/vulnerable-api-practika/vulnerable-api-practika/zap-rules:/zap/scripts/:ro" \
           ghcr.io/zaproxy/zaproxy:stable \
