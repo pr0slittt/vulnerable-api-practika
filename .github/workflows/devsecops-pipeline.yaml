@@ -54,11 +54,11 @@ jobs:
         run: |
           docker run --rm --network zap-net \
             -v "${{ github.workspace }}":/zap/wrk/:rw \
-            owasp/zap2docker-stable \
+            ghcr.io/zaproxy/zap2docker-stable \
             zap-baseline.py -t http://localhost:8081 -J /zap/wrk/zap-report.json
 
       - name: Check if zap-report.json exists
-        run: ls -l ${{ github.workspace }}/zap-report.json
+        run: ls -l "${{ github.workspace }}/zap-report.json"
 
       - name: Upload ZAP report
         uses: actions/upload-artifact@v4
