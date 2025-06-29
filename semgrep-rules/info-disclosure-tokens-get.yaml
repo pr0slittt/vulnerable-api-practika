@@ -8,43 +8,36 @@ rules:
     languages:
       - python
     patterns:
-      # 1. Найти маршрут "/tokens" с методом GET
-      - pattern-inside: |
+      # Главный паттерн, ищущий функцию маршрута /tokens с методом GET
+      - pattern: |
           @route("/tokens", method="GET")
           def $FUNC_NAME():
-            ...
+            $SETUP_CODE
+            $DB_CURSOR.execute($SQL_QUERY)
+            $FETCHED_DATA = $DB_CURSOR.$FETCH_METHOD()
+            $RETURN_STATEMENT
+            $TEARDOWN_CODE
 
-      # 2. Внутри этой функции найти выполнение SQL-запроса, который выбирает данные из таблицы "users"
-      - pattern-inside: |
-          def $FUNC_NAME():
-            ...
-            $DB_CURSOR.execute("SELECT $COLUMNS FROM users $WHERE_CLAUSE")
-            ...
+      # Отдельное определение для метапеременной $SQL_QUERY
+      - metavariable-pattern:
+          metavariable: $SQL_QUERY
+          pattern-regex: 'SELECT\s+.*?\s+FROM\s+users'
 
-      # 3. Внутри этой же функции найти вызов fetchall() или fetchone()
-      #    и присвоение результата в метапеременную $FETCHED_DATA.
-      - pattern-inside: |
-          def $FUNC_NAME():
-            ...
-            $FETCHED_DATA = $FETCH_METHOD()
-            ...
+      # Отдельное определение для метапеременной $FETCH_METHOD
       - metavariable-pattern:
           metavariable: $FETCH_METHOD
           pattern-either:
-            - pattern: $DB_CURSOR.fetchall()
-            - pattern: $DB_CURSOR.fetchone()
+            - pattern: fetchall()
+            - pattern: fetchone()
 
-      # 4. Внутри этой же функции найти возвращаемое значение, которое включает $FETCHED_DATA.
-      - pattern-inside: |
-          def $FUNC_NAME():
-            ...
-            return $RETURN_VALUE
+      # Отдельное определение для метапеременной $RETURN_STATEMENT
       - metavariable-pattern:
-          metavariable: $RETURN_VALUE
+          metavariable: $RETURN_STATEMENT
           pattern-either:
-            - pattern: $FETCHED_DATA # Возврат напрямую
-            - pattern: {"response": $FETCHED_DATA} # Возврат в словаре с ключом "response"
-            - pattern: {"$KEY": $FETCHED_DATA} # Возврат в словаре с любым ключом
+            - pattern: 'return $FETCHED_DATA' # Возврат напрямую
+            - pattern: 'return {"response": $FETCHED_DATA}' # Возврат в словаре с ключом "response"
+            - pattern: 'return {"$KEY": $FETCHED_DATA}' # Возврат в словаре с любым ключом
+
     paths:
       include:
         - vAPI.py
