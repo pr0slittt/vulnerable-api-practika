@@ -1,0 +1,23 @@
+# semgrep-rules/info-disclosure-tokens-get.yaml
+rules:
+  - id: information-disclosure-tokens-get
+    message: |
+      GET-метод для эндпоинта /tokens возвращает все данные пользователей, включая пароли.
+      Этот маршрут не задокументирован и является серьезной утечкой информации.
+    severity: ERROR
+    languages:
+      - python
+    patterns:
+      # Совпадает с любой функцией, обслуживающей GET /tokens и выполняющей SELECT из таблицы users
+      - pattern: |
+          @route("/tokens", method="GET")
+          def $FUNC_NAME():
+            ...
+            $CURSOR.execute($QUERY)
+            ...
+      - metavariable-pattern:
+          metavariable: $QUERY
+          pattern-regex: 'SELECT\s+.*?\s+FROM\s+users'
+    paths:
+      include:
+        - vAPI.py
