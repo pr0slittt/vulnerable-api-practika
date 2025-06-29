@@ -1,4 +1,4 @@
-name: DevSecOps Full Pipeline
+name: DevSecOps Pipeline
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
       - master
 
 jobs:
-  devsecops-pipeline:
+  build-and-scan:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -22,7 +22,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -32,75 +32,125 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Semgrep SAST Scan
+      - name: Run Semgrep Scan
         uses: returntocorp/semgrep-action@v1
         with:
-          config: |
-            p/python
-            p/security-audit
-            ./semgrep-rules
-          generateSarif: true
-          output: semgrep-results.sarif
+          config: p/python,p/security-audit,./semgrep-rules
+          args: --sarif -o semgrep-results.sarif
 
       - name: Upload Semgrep SARIF results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: semgrep-results.sarif
+          wait-for-processing: true
 
-      - name: Run Anchore Grype SCA Scan
-        uses: anchore/scan-action@v3
+      - name: Upload Semgrep SARIF as Artifact
+        uses: actions/upload-artifact@v4
         with:
-          path: ./app
-          output-format: sarif
-          output-file: grype-results.sarif
+          name: semgrep-sarif-report
+          path: semgrep-results.sarif
+          retention-days: 5
+
+      - name: Cache Grype DB
+        uses: actions/cache@v3
+        with:
+          path: ~/.grype/db
+          key: ${{ runner.os }}-grype-db-${{ hashFiles('grype-db-version.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-grype-db-
+
+      - name: Create Grype DB Version File
+        run: echo "1" > grype-db-version.txt
+
+      - name: Install Grype
+        uses: anchore/grype@v0.48.0
+
+      - name: Run Grype SCA Scan and Save SARIF
+        id: grype_scan_run
+        run: |
+          set -euxo pipefail
+          GRYPE_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
+          grype dir:./app -o sarif --file "$GRYPE_OUTPUT_PATH" || true
+          echo "grype_exit_code=$?" >> "$GITHUB_OUTPUT"
+
+          if [ ! -f "$GRYPE_OUTPUT_PATH" ]; then
+            echo "ERROR: grype-results.sarif was NOT created by Grype!"
+            exit 1
+          fi
 
       - name: Upload Grype SARIF results to GitHub Security
+        if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: grype-results.sarif
+          wait-for-processing: true
+
+      - name: Upload Grype SARIF as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: grype-sarif-report
+          path: grype-results.sarif
+          retention-days: 5
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
+      - name: Build Docker Image
+        run: docker build -t vulnerable-api:latest .
+
+      - name: Run Trivy Container Scan
+        uses: aquasecurity/trivy-action@v0.13.3
+        with:
+          image-ref: vulnerable-api:latest
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+        continue-on-error: true
+
+      - name: Upload Trivy SARIF results to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          wait-for-processing: true
+
+      - name: Upload Trivy SARIF as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sarif-report
+          path: trivy-results.sarif
+          retention-days: 5
+
+  zap_scan:
+    runs-on: ubuntu-latest
+    needs: build-and-scan
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_PAT }}
 
-      - name: Log in to Docker Hub
+      - name: Login to Docker Hub
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build Docker Image
-        run: |
-          docker build -t vulnerable-api:latest .
-
-      - name: Run Trivy Container Scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'vulnerable-api:latest'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'HIGH,CRITICAL'
-          ignore-unfixed: true
-
-      - name: Upload Trivy SARIF results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trivy-results.sarif
-
-      - name: Create Docker network for ZAP
+      - name: Create Docker network
         run: docker network create zap-net || true
 
       - name: Run vulnerable-api container
         run: |
           docker run -d --rm --network zap-net --name vulnerable-api \
-            -p 8081:8081 \
-            ghcr.io/pr0slittt/vulnerable-api-practika:latest
+          -p 8081:8081 \
+          ghcr.io/pr0slittt/vulnerable-api-practika:latest
 
       - name: Wait for vulnerable-api to be ready
         run: |
@@ -114,20 +164,22 @@ jobs:
             fi
           done
 
-      - name: Run OWASP ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.12.0
+      - name: Show vulnerable-api logs
+        run: docker logs vulnerable-api || echo "No logs"
+
+      - name: Run OWASP ZAP baseline scan (игнорировать предупреждения)
+        uses: zaproxy/action-baseline@v0.7.0
         with:
           target: 'http://vulnerable-api:8081'
-          cmd_options: '-I'
-          format: 'sarif'
+          report_format: 'html,json,xml'
+          docker_network: 'zap-net'
+          fail_on_risk: 'false'
 
-      - name: Upload ZAP SARIF results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'gl-sarif/zap.sarif'
-
-      - name: Upload ZAP Reports
+      - name: Upload ZAP scan reports
         uses: actions/upload-artifact@v4
         with:
           name: zap-reports
-          path: gl-sarif/
+          path: |
+            zap-report.html
+            zap-report.json
+            zap-report.xml
