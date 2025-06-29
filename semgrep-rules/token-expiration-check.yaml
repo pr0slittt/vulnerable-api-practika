@@ -14,7 +14,7 @@ rules:
             if isinstance($TOKEN_RECORD, tuple) and $TOKEN_RECORD[1] == str($TOKEN):
               ...
       - pattern-not: |
-          if $TOKEN_RECORD[3] >= int(time.time()):
+          if $TOKEN_RECORD[3] >= int(time.time()): 
             ...
     paths:
       include:
