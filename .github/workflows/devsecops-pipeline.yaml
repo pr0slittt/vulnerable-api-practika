@@ -9,23 +9,22 @@ on:
 jobs:
   security-scan:
     runs-on: ubuntu-latest
+    services:
+      vulnerable-api:
+        image: ghcr.io/pr0slittt/vulnerable-api-practika:latest
+        ports:
+          - 8081:8081
+        options: >-
+          --health-cmd="curl --fail http://localhost:8081 || exit 1"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Build vulnerable-api Docker image
-        run: |
-          docker build -t vulnerable-api-practika:latest .
-
-      - name: Create docker network
-        run: |
-          docker network create zap-net || true
-
-      - name: Run vulnerable-api container
-        run: |
-          docker run -d --name vulnerable-api --network zap-net -p 8081:8081 vulnerable-api-practika:latest
-
-      - name: Wait for vulnerable API to be ready
+      - name: Wait for vulnerable API service to be healthy
         run: |
           echo "Waiting for vulnerable API to be ready..."
           for i in {1..20}; do
@@ -42,7 +41,9 @@ jobs:
 
       - name: Run OWASP ZAP Baseline Scan
         run: |
-          docker run --rm --network zap-net -v ${{ github.workspace }}:/zap/wrk/:rw owasp/zap2docker-stable zap-baseline.py \
+          docker network create zap-net || true
+          docker network connect zap-net ${{ job.services.vulnerable-api.id }}
+          docker run --rm --network zap-net -v ${{ github.workspace }}:/zap/wrk/:rw ghcr.io/zaproxy/zap2docker-stable zap-baseline.py \
             -t http://vulnerable-api:8081 \
             -J zap-report.json
 
@@ -102,10 +103,3 @@ jobs:
         with:
           sarif_file: zap-report.sarif
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Cleanup vulnerable-api container
-        if: always()
-        run: |
-          docker stop vulnerable-api
-          docker rm vulnerable-api
-          docker network rm zap-net || true
