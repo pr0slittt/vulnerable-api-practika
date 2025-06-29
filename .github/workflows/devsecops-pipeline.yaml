@@ -56,12 +56,10 @@ jobs:
           docker run --rm --network zap-net \
             --user 0 \
             -v "${{ github.workspace }}":/zap/wrk:rw \
+            -v "${{ github.workspace }}/zap-rules:/zap/scripts/:ro" \ # <-- ДОБАВЛЕНО: Монтирование кастомных правил
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py -t http://vulnerable-api:8081 -I \
             -r zap-report.html -J zap-report.json -x zap-report.xml
-
-      - name: List generated report files
-        run: ls -lh zap-report.* || echo "No report files found"
 
       - name: Upload ZAP scan reports
         uses: actions/upload-artifact@v4

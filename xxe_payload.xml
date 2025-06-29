@@ -1,8 +1,10 @@
 <?xml version="1.0"?>
-<!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+<!DOCTYPE foo [
+  <!ENTITY xxe SYSTEM "file:///etc/hostname">
+]>
 <auth>
-  <passwordCredentials>
-    <username>&xxe;</username>
-    <password>test</password>
-  </passwordCredentials>
+    <passwordCredentials>
+        <username>&xxe;</username>
+        <password>pass</password>
+    </passwordCredentials>
 </auth>
