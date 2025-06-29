@@ -13,7 +13,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Login to GitHub Container Registry
+      - name: Login to GHCR
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
@@ -31,7 +31,8 @@ jobs:
 
       - name: Run vulnerable-api container
         run: |
-          docker run -d --rm --network zap-net --name vulnerable-api -p 8081:8081 \
+          docker run -d --rm --network zap-net --name vulnerable-api \
+            -p 8081:8081 \
             ghcr.io/pr0slittt/vulnerable-api-practika:latest
 
       - name: Wait for vulnerable-api to be ready
@@ -46,16 +47,16 @@ jobs:
             fi
           done
 
-      - name: Show vulnerable-api logs (for debugging)
-        run: |
-          docker logs vulnerable-api || echo "No logs available or container stopped"
+      - name: Show vulnerable-api logs
+        run: docker logs vulnerable-api || echo "No logs"
 
       - name: Run OWASP ZAP baseline scan
         run: |
+          docker pull ghcr.io/zaproxy/zaproxy:stable
           docker run --rm --network zap-net \
             -v "${{ github.workspace }}":/zap/wrk/:rw \
-            ghcr.io/zaproxy/zap2docker-stable \
-            zap-baseline.py -t http://localhost:8081 -J /zap/wrk/zap-report.json
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://vulnerable-api:8081 -J /zap/wrk/zap-report.json
 
       - name: Check if zap-report.json exists
         run: ls -l "${{ github.workspace }}/zap-report.json"
