@@ -54,8 +54,8 @@ jobs:
         run: |
           docker run --rm --network zap-net \
             -v "${{ github.workspace }}":/zap/wrk/:rw \
-            securecodebox/zap \
-            zap.sh -cmd -quickurl http://localhost:8081 -quickout /zap/wrk/zap-report.json
+            owasp/zap2docker-stable \
+            zap-baseline.py -t http://localhost:8081 -J /zap/wrk/zap-report.json
 
       - name: Check if zap-report.json exists
         run: ls -l ${{ github.workspace }}/zap-report.json
