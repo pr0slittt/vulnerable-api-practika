@@ -3,39 +3,50 @@ name: OWASP ZAP Scan
 on:
   push:
     branches:
-      - main
+      - main  # запускается при пуше в main (можно изменить)
 
 jobs:
-  zap-scan:
+  zap_scan:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PAT }} 
+    - name: Create Docker network
+      run: |
+        docker network create zap-net || true
 
-      - name: Pull vulnerable-api image
-        run: |
-          docker pull ghcr.io/pr0slittt/vulnerable-api-practika:latest
+    - name: Start vulnerable-api container
+      run: |
+        docker run -d --rm --network zap-net --name vulnerable-api \
+        ghcr.io/pr0slittt/vulnerable-api-practika:latest
 
-      - name: Run vulnerable-api container
-        run: |
-          docker network create zap-net || echo "Network zap-net already exists"
-          docker run -d --rm --name vulnerable-api --network zap-net -p 8081:8081 ghcr.io/pr0slittt/vulnerable-api-practika:latest
+    - name: Wait for API to be ready
+      run: |
+        for i in {1..20}; do
+          if curl -s http://localhost:8081 > /dev/null; then
+            echo "API is up"
+            break
+          else
+            echo "Waiting for API..."
+            sleep 3
+          fi
+        done
 
-      - name: Run OWASP ZAP baseline scan
-        run: |
-          docker run --rm --network zap-net -v "${{ github.workspace }}":/zap/wrk/:rw owasp/zap2docker-stable zap-baseline.py \
-          -t http://vulnerable-api:8081 -J zap-report.json
+    - name: Run OWASP ZAP baseline scan
+      run: |
+        docker run --rm --network zap-net \
+          -v "${{ github.workspace }}":/zap/wrk/:rw \
+          ghcr.io/zaproxy/zap2docker-stable \
+          zap-baseline.py -t http://vulnerable-api:8081 -J zap-report.json
 
-      - name: Upload ZAP report artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: zap-report
-          path: zap-report.json
+    - name: Upload ZAP report
+      uses: actions/upload-artifact@v3
+      with:
+        name: zap-report
+        path: zap-report.json
+
+    - name: Cleanup
+      run: |
+        docker network rm zap-net || true
