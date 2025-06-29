@@ -3,7 +3,7 @@ name: OWASP ZAP Scan
 on:
   push:
     branches:
-      - main 
+      - main
 
 jobs:
   zap_scan:
@@ -48,7 +48,7 @@ jobs:
         run: |
           docker run --rm --network zap-net \
             -v "${{ github.workspace }}":/zap/wrk/:rw \
-            owasp/zap2docker-stable \
+            owasp/zap2docker-stable:2.13.0 \
             zap-baseline.py -t http://vulnerable-api:8081 -J zap-report.json
 
       - name: Upload ZAP report
