@@ -25,7 +25,7 @@ jobs:
 
       - name: Run vulnerable-api container
         run: |
-          docker run -d --rm --network zap-net --name vulnerable-api \
+          docker run -d --rm --network zap-net --name vulnerable-api -p 8081:8081 \
             ghcr.io/pr0slittt/vulnerable-api-practika:latest
 
       - name: Wait for vulnerable-api to be ready
@@ -48,8 +48,8 @@ jobs:
         run: |
           docker run --rm --network zap-net \
             -v "${{ github.workspace }}":/zap/wrk/:rw \
-            owasp/zap2docker-stable:2.13.0 \
-            zap-baseline.py -t http://vulnerable-api:8081 -J zap-report.json
+            owasp/zap2docker-stable \
+            zap-baseline.py -t http://localhost:8081 -J zap-report.json
 
       - name: Upload ZAP report
         uses: actions/upload-artifact@v4
