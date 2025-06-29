@@ -8,18 +8,43 @@ rules:
     languages:
       - python
     patterns:
+      # 1. Найти маршрут "/tokens" с методом GET
       - pattern-inside: |
           @route("/tokens", method="GET")
-          def get_get_token():
+          def $FUNC_NAME():
             ...
-            c.execute("SELECT $ANY_COLUMNS FROM users") # Ищем выборку из таблицы users
-            $USERS_DATA = c.fetchall() # Результат fetchall()
-            return {"response": $USERS_DATA} # Возврат данных в ответе
-      # Убеждаемся, что переменная $USERS_DATA действительно содержит результат c.fetchall()
+
+      # 2. Внутри этой функции найти выполнение SQL-запроса, который выбирает данные из таблицы "users"
+      - pattern-inside: |
+          def $FUNC_NAME():
+            ...
+            $DB_CURSOR.execute("SELECT $COLUMNS FROM users $WHERE_CLAUSE")
+            ...
+
+      # 3. Внутри этой же функции найти вызов fetchall() или fetchone()
+      #    и присвоение результата в метапеременную $FETCHED_DATA.
+      - pattern-inside: |
+          def $FUNC_NAME():
+            ...
+            $FETCHED_DATA = $FETCH_METHOD()
+            ...
       - metavariable-pattern:
-          metavariable: $USERS_DATA
-          pattern: |
-            $SOME_VAR = c.fetchall()
+          metavariable: $FETCH_METHOD
+          pattern-either:
+            - pattern: $DB_CURSOR.fetchall()
+            - pattern: $DB_CURSOR.fetchone()
+
+      # 4. Внутри этой же функции найти возвращаемое значение, которое включает $FETCHED_DATA.
+      - pattern-inside: |
+          def $FUNC_NAME():
+            ...
+            return $RETURN_VALUE
+      - metavariable-pattern:
+          metavariable: $RETURN_VALUE
+          pattern-either:
+            - pattern: $FETCHED_DATA # Возврат напрямую
+            - pattern: {"response": $FETCHED_DATA} # Возврат в словаре с ключом "response"
+            - pattern: {"$KEY": $FETCHED_DATA} # Возврат в словаре с любым ключом
     paths:
       include:
         - vAPI.py
