@@ -3,38 +3,45 @@ name: OWASP ZAP Scan
 on:
   push:
     branches:
-      - main  # Или ветка, в которой хочешь запускать
+      - main
+  pull_request:
 
 jobs:
-  zap-scan:
+  zap_scan:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+    - name: Checkout repository
+      uses: actions/checkout@v3
 
-      - name: Login to GHCR
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull vulnerable-api image
-        run: docker pull ghcr.io/pr0slittt/vulnerable-api-practika:latest
+    - name: Pull vulnerable API image
+      run: docker pull ghcr.io/pr0slittt/vulnerable-api-practika:latest
 
-      - name: Start vulnerable-api container
-        run: |
-          docker network create zap-net || true
-          docker run -d --rm --name vulnerable-api --network zap-net -p 8081:8081 ghcr.io/pr0slittt/vulnerable-api-practika:latest
+    - name: Run vulnerable API container
+      run: docker run -d --name vulnerable-api -p 8081:8081 ghcr.io/pr0slittt/vulnerable-api-practika:latest
 
-      - name: Run OWASP ZAP Baseline Scan
-        run: |
-          docker run --rm --network zap-net -v ${{ github.workspace }}:/zap/wrk/:rw \
-          owasp/zap2docker-stable zap-baseline.py -t http://vulnerable-api:8081 -J /zap/wrk/zap-report.json
+    - name: Pull ZAP Docker image
+      run: docker pull ghcr.io/zaproxy/zap2docker-stable:latest
 
-      - name: Upload ZAP report artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: zap-report
-          path: zap-report.json
+    - name: Run OWASP ZAP baseline scan
+      run: |
+        docker run --rm --network host \
+          -v ${{ github.workspace }}:/zap/wrk/:rw \
+          ghcr.io/zaproxy/zap2docker-stable:latest \
+          zap-baseline.py -t http://host.docker.internal:8081 -J zap-report.json
+
+    - name: Upload ZAP report artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: zap-report
+        path: zap-report.json
+
+    - name: Stop vulnerable API container
+      run: docker stop vulnerable-api
