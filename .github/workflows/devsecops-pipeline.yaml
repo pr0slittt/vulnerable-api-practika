@@ -12,27 +12,63 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Install Semgrep
-        run: pip install semgrep
+      - name: Install Semgrep CLI
+        run: |
+          set -euxo pipefail
+          pip install "semgrep>=1.76.0"
+          semgrep --version
 
-      - name: Run Semgrep Scan
-        run: semgrep --config=p/python,p/security-audit,./semgrep-rules --sarif --output=semgrep-results.sarif
-        continue-on-error: true
+      - name: Run Semgrep SAST Scan
+        id: semgrep_scan_run
+        run: |
+          set -euxo pipefail
+          echo "Starting Semgrep CLI scan. PWD: $(pwd)"
+          
+          # Отладочный вывод: Список файлов в текущей директории и в папке app
+          echo "Listing files in current directory (should contain semgrep-rules/):"
+          ls -l .
+          echo "Listing files in app/ directory:"
+          ls -l ./app
 
-      - name: Upload Semgrep SARIF to GitHub Security
-        if: always()
+          SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
+          echo "Semgrep output path set to: $SARIF_OUTPUT_PATH"
+
+          semgrep \
+            --config "p/python" \
+            --config "p/security-audit" \
+            --config "semgrep-rules/" \
+            --sarif \
+            -o "$SARIF_OUTPUT_PATH" \
+            ./app \
+            --verbose || true
+          
+          SEMGREP_EXIT_CODE=$?
+          echo "Semgrep scan finished. Raw exit code: $SEMGREP_EXIT_CODE"
+          
+          echo "semgrep_exit_code=$SEMGREP_EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+          if [ ! -f "$SARIF_OUTPUT_PATH" ]; then
+            echo "ERROR: semgrep-results.sarif was NOT created by Semgrep!"
+            exit 1
+          else
+            echo "Semgrep SARIF file created. Size: $(du -h "$SARIF_OUTPUT_PATH" | awk '{print $1}')"
+            echo "First 100 lines of semgrep-results.sarif:"
+            head -n 100 "$SARIF_OUTPUT_PATH"
+          fi
+
+      - name: Upload Semgrep SARIF results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: semgrep-results.sarif
-          token: ${{ secrets.GITHUB_TOKEN }}
+          sarif_file: 'semgrep-results.sarif'
           wait-for-processing: true
+          working-directory: ${{ github.workspace }}
 
-      - name: Upload Semgrep SARIF report
-        if: always()
+      - name: Upload Semgrep SARIF as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: semgrep-report
+          name: semgrep-sarif-report
           path: semgrep-results.sarif
+          retention-days: 5
 
   trivy_scan:
     runs-on: ubuntu-latest
@@ -115,10 +151,16 @@ jobs:
             ghcr.io/pr0slittt/vulnerable-api-practika:latest
 
       - name: Wait for vulnerable-api to be ready
-        uses: andstor/wait-for-http-action@v1
-        with:
-          url: 'http://localhost:8081'
-          timeout: 60
+        run: |
+          for i in {1..15}; do
+            if curl -s http://localhost:8081; then
+              echo "API is up"
+              break
+            else
+              echo "Waiting for API..."
+              sleep 2
+            fi
+          done
 
       - name: Show vulnerable-api logs
         run: docker logs vulnerable-api || echo "No logs"
@@ -129,7 +171,7 @@ jobs:
           docker run --rm --network zap-net \
             --user 0 \
             -v "${{ github.workspace }}":/zap/wrk:rw \
-            -v "${{ github.workspace }}/zap-rules":/zap/scripts/:ro \
+            -v "${{ github.workspace }}/zap-rules:/zap/scripts/:ro" \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py -t http://vulnerable-api:8081 -I \
             -r zap-report.html -J zap-report.json -x zap-report.xml
