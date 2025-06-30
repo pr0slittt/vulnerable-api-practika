@@ -1,0 +1,63 @@
+rules:
+  - id: token-expiration-missing-get-user
+    message: |
+      В маршруте GET /user/<user_id> используется токен без проверки срока действия.
+    severity: WARNING
+    languages:
+      - python
+    patterns:
+      - pattern-inside: |
+          @route("/user/<user_id>", method="GET")
+          def $FUNC(user_id):
+            ...
+            $TOKEN_RECORD = $DB_CURSOR.fetchone()
+            if isinstance($TOKEN_RECORD, tuple) and $TOKEN_RECORD[1] == str($TOKEN):
+              ...
+      - pattern-not: |
+          if $TOKEN_RECORD[3] >= int(time.time()): 
+            ...
+    paths:
+      include:
+        - vAPI.py
+
+  - id: token-expiration-missing-post-user
+    message: |
+      В маршруте POST /user используется токен без проверки срока действия.
+    severity: WARNING
+    languages:
+      - python
+    patterns:
+      - pattern-inside: |
+          @route("/user", method="POST")
+          def $FUNC():
+            ...
+            $TOKEN_RECORD = $DB_CURSOR.fetchone()
+            if isinstance($TOKEN_RECORD, tuple):
+              ...
+      - pattern-not: |
+          if $TOKEN_RECORD[3] >= int(time.time()):
+            ...
+    paths:
+      include:
+        - vAPI.py
+
+  - id: token-expiration-missing-delete-user
+    message: |
+      В маршруте DELETE /user/<user_id> используется токен без проверки срока действия.
+    severity: WARNING
+    languages:
+      - python
+    patterns:
+      - pattern-inside: |
+          @route("/user/<user_id>", method="DELETE")
+          def $FUNC(user_id):
+            ...
+            $TOKEN_RECORD = $DB_CURSOR.fetchone()
+            if isinstance($TOKEN_RECORD, tuple) and $TOKEN_RECORD[1] == str($TOKEN):
+              ...
+      - pattern-not: |
+          if $TOKEN_RECORD[3] >= int(time.time()):
+            ...
+    paths:
+      include:
+        - vAPI.py
