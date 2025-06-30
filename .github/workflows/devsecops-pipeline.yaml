@@ -23,11 +23,13 @@ jobs:
 
       - name: Upload Semgrep SARIF to GitHub Security
         if: always()
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: semgrep-results.sarif
+          sarif_file: ${{ github.workspace }}/semgrep-results.sarif
+          token: ${{ secrets.GITHUB_TOKEN }}
+          wait-for-processing: true
 
-      - name: Upload Semgrep SARIF report artifact
+      - name: Upload Semgrep SARIF report (artifact)
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -54,13 +56,7 @@ jobs:
           ignore-unfixed: true
         continue-on-error: true
 
-      - name: Upload Trivy SARIF to GitHub Security
-        if: always()
-        uses: github/codeql-action/upload-sarif@v2
-        with:
-          sarif_file: trivy-results.sarif
-
-      - name: Upload Trivy SARIF report artifact
+      - name: Upload Trivy SARIF report
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -84,13 +80,7 @@ jobs:
           output-format: sarif
         continue-on-error: true
 
-      - name: Upload Grype SARIF to GitHub Security
-        if: always()
-        uses: github/codeql-action/upload-sarif@v2
-        with:
-          sarif_file: grype.sarif
-
-      - name: Upload Grype SARIF report artifact
+      - name: Upload Grype SARIF report
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -123,15 +113,14 @@ jobs:
       - name: Run vulnerable-api container
         run: |
           docker run -d --rm --network zap-net --name vulnerable-api \
-          -p 8081:8081 \
-          ghcr.io/pr0slittt/vulnerable-api-practika:latest
+            -p 8081:8081 \
+            ghcr.io/pr0slittt/vulnerable-api-practika:latest
 
       - name: Wait for vulnerable-api to be ready
         uses: andstor/wait-for-http-action@v1
         with:
           url: http://localhost:8081
           timeout: 30
-          interval: 2
 
       - name: Show vulnerable-api logs
         run: docker logs vulnerable-api || echo "No logs"
@@ -150,7 +139,7 @@ jobs:
       - name: Upload ZAP scan reports
         uses: actions/upload-artifact@v4
         with:
-          name: zap-report
+          name: zap-reports
           path: |
             zap-report.html
             zap-report.json
