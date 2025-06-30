@@ -100,27 +100,43 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Create Docker network
-        uses: docker://docker
+        uses: addnab/docker-run-action@v3
         with:
-          args: network create zap-net || true
+          image: docker
+          options: network create zap-net || true
+          run: echo "Network created"
 
       - name: Run vulnerable-api container
-        uses: docker://docker
+        uses: addnab/docker-run-action@v3
         with:
-          args: run -d --rm --network zap-net --name vulnerable-api -p 8081:8081 ghcr.io/pr0slittt/vulnerable-api-practika:latest
+          image: ghcr.io/pr0slittt/vulnerable-api-practika:latest
+          options: --rm -d --network zap-net -p 8081:8081 --name vulnerable-api
+          run: sleep infinity
 
       - name: Wait for vulnerable-api to be ready
-        uses: andstor/wait-for-http-action@v1
+        uses: jakejarvis/wait-action@v0.1.0
         with:
           url: http://localhost:8081
           timeout: 30
 
-      - name: Run OWASP ZAP baseline scan
-        uses: docker://ghcr.io/zaproxy/zaproxy:stable
+      - name: Show vulnerable-api logs
+        uses: addnab/docker-run-action@v3
         with:
-          args: zap-baseline.py -t http://vulnerable-api:8081 -I --auto -r zap-report.html -J zap-report.json -x zap-report.xml -w zap-report.md
+          image: docker
+          options: logs vulnerable-api
+          run: echo "Logs shown"
 
-      - name: Upload ZAP reports
+      - name: Run OWASP ZAP baseline scan
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ghcr.io/zaproxy/zaproxy:stable
+          options: >
+            --rm --network zap-net --user 0
+            -v ${{ github.workspace }}:/zap/wrk:rw
+            -v ${{ github.workspace }}/zap-rules:/zap/scripts/:ro
+          run: zap-baseline.py -t http://vulnerable-api:8081 -I -r zap-report.html -J zap-report.json -x zap-report.xml
+
+      - name: Upload ZAP scan reports
         uses: actions/upload-artifact@v4
         with:
           name: zap-reports
@@ -128,4 +144,3 @@ jobs:
             zap-report.html
             zap-report.json
             zap-report.xml
-            zap-report.md
