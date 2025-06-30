@@ -1,22 +1,25 @@
-# Используем официальный образ Python 3.12 (slim для уменьшения размера)
 FROM python:3.12-slim-bookworm
 
-# Устанавливаем рабочую директорию в контейнере
+RUN apt-get update && \
+    apt-get install -y curl --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /opt/vAPI/app
 
-# Копируем файл зависимостей из корня контекста сборки
-# в рабочую директорию контейнера (/opt/vAPI/app/)
 COPY requirements.txt .
 
-# Устанавливаем зависимости
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем содержимое папки 'app' из контекста сборки (вашей локальной папки 'app/')
-# в рабочую директорию контейнера (/opt/vAPI/app/)
 COPY app/ .
 
-# Открываем порт, на котором будет работать приложение
+RUN adduser --system --group appuser
+
+RUN chown -R appuser:appuser /opt/vAPI/app
+
+USER appuser
+
 EXPOSE 8081
 
-# Команда для запуска приложения при старте контейнера
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD curl -f http://localhost:8081/ || exit 1
+
 CMD ["python", "vAPI.py"]
