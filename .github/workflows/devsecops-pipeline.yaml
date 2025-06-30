@@ -65,13 +65,12 @@ jobs:
       - name: Build vulnerable-api Docker image
         run: docker build -t vulnerable-api:latest .
 
-      - name: Run Grype scan with Anchore Scan Action
+      - name: Run Grype scan
         uses: anchore/scan-action@v3
         with:
           image: vulnerable-api:latest
-          format: sarif
-          output-file: grype-results.sarif
-          severity-cutoff: high
+          fail-build: false
+          output-format: sarif
         continue-on-error: true
 
       - name: Upload Grype SARIF report
@@ -79,7 +78,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: grype-report
-          path: grype-results.sarif
+          path: results.sarif
 
   zap_scan:
     runs-on: ubuntu-latest
@@ -101,12 +100,9 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Create Docker network
-        run: docker network create zap-net || true
-
       - name: Run vulnerable-api container
         run: |
-          docker run -d --rm --network zap-net --name vulnerable-api \
+          docker run -d --rm --name vulnerable-api \
           -p 8081:8081 \
           ghcr.io/pr0slittt/vulnerable-api-practika:latest
 
@@ -125,14 +121,14 @@ jobs:
       - name: Show vulnerable-api logs
         run: docker logs vulnerable-api || echo "No logs"
 
-      - name: Run OWASP ZAP baseline scan (ignore warnings)
+      - name: Run OWASP ZAP baseline scan (fixed)
         uses: zaproxy/action-baseline@v0.9.0
         with:
-          target: 'http://vulnerable-api:8081'
+          target: 'http://localhost:8081'
           format: 'html'
           output: 'zap-report.html'
           failOnWarnings: false
-          cmdOptions: '-I'
+          cmdOptions: '-I --auto'
 
       - name: Upload ZAP scan reports
         uses: actions/upload-artifact@v4
