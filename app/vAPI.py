@@ -1,8 +1,4 @@
 """
-This API interacts with a user and token database.
-The code is written to exemplify common API security vulnerabilities
-based on user's confirmed list.
-
 Confirmed active vulnerabilities:
 1. SQL Injection (SQL queries are not parameterized)
 2. Information Disclosure (undocumented GET /tokens route)
@@ -34,7 +30,6 @@ def init_db():
     conn = sqlite3.connect("vAPI.db")
     c = conn.cursor()
 
-    # Создаем таблицу пользователей, если она не существует
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -74,7 +69,7 @@ def init_db():
             )
             conn.commit()
         except sqlite3.IntegrityError:
-
+            # Пользователь уже существует, пропускаем
             pass
 
     try:
@@ -83,6 +78,7 @@ def init_db():
         expire_date_str = time.ctime(expire_stamp)
         token_str = hashlib.md5(expire_date_str.encode("utf-8")).hexdigest()
 
+        # Проверяем, существует ли уже токен для admin_super (userid 10)
         c.execute("SELECT * FROM users WHERE username = 'admin_super'")
         admin_super_user = c.fetchone()
         if admin_super_user:
@@ -111,18 +107,14 @@ def init_db():
 
 @route("/", method="GET")
 def get_root():
-    """
-    Give default message for a GET on root directory.
-    """
+
     response = {"response": {"Application": "vulnerable-api", "Status": "running"}}
     return json.dumps(response, sort_keys=True, indent=2)
 
 
 @route("/tokens", method="POST")
 def get_token():
-    """
-    User needs to get an auth token before actioning the database
-    """
+
     content_type = request.headers.get("Content-type")
     conn = sqlite3.connect("vAPI.db")
     c = conn.cursor()
@@ -160,7 +152,6 @@ def get_token():
 
         except Exception as e:
             # Уязвимость: Раскрытие информации в режиме отладки (Debug Mode)
-            # Может выдать трассировку стека или детали ошибки парсинга, помогая злоумышленнику.
             conn.close()
             return json.dumps(
                 {
@@ -202,7 +193,7 @@ def get_token():
             token_record = c.fetchone()
 
             current_time = int(time.time())
-            expire_stamp = current_time + 300  # Токен истекает через 5 минут
+            expire_stamp = current_time + 300
 
             if isinstance(token_record, tuple) and token_record[3] >= current_time:
                 # If a recent unexpired token exists, use it
@@ -246,10 +237,13 @@ def get_token():
 
 @route("/tokens", method="GET")
 def get_get_token():
-
+    """
+    This is an undocumented request. EASTER EGG (Information Disclosure vulnerability remains active)
+    /tokens is only supposed to accept a POST! Are you checking the other verbs?
+    """
     conn = sqlite3.connect("vAPI.db")
     c = conn.cursor()
-    query = "SELECT id, username, password FROM users"
+    query = "SELECT id, username, password FROM users"  # Returns all users (Information Disclosure & Cleartext Password Storage)
     c.execute(query)
     users = c.fetchall()
     conn.close()
@@ -281,6 +275,7 @@ def get_user(user_id):
         token_record = c.fetchone()
 
         response = {}
+        # Token Expiration vulnerability remains active - No proper check for expiration in many routes
         if isinstance(token_record, tuple) and token_record[1] == str(token):
             # The token is valid, but we will not explicitly check expiration here for this demo
             # This makes the Token Expiration vulnerability active
@@ -329,6 +324,8 @@ def create_user():
     c = conn.cursor()
     try:
         # SQL Injection vulnerability remains active (Token in query)
+        # Insufficient Authorization is active: removed "AND userid = 10" from token_query.
+        # Any valid token (even non-admin) will be fetched, allowing user creation.
         token_query = "SELECT * FROM tokens WHERE token = '%s'" % (str(token))
         c.execute(token_query)
         token_record = c.fetchone()
@@ -363,7 +360,9 @@ def create_user():
                     conn.commit()
                     response["user"] = {"username": name, "password": password}
             else:
-                response["error"] = {"message": "username cannot be empty!"}
+                response["error"] = {
+                    "message": "username cannot be empty!"
+                }  # More specific error message
         else:
             response["error"] = {"message": "must provide valid token or token expired"}
         return {"response": response}
@@ -372,12 +371,14 @@ def create_user():
         return json.dumps(response, indent=2)
     finally:
         c.close()
-        conn.close()  # Закрываем соединение
+        conn.close()
 
 
 @route("/user/<user_id>", method="DELETE")
 def delete_user_by_id(user_id):
-
+    """
+    Deletes a user by ID. Does NOT require admin token (Insufficient Authorization is active).
+    """
     token = request.headers.get("X-Auth-Token")
     if not token:
         return (
@@ -397,6 +398,7 @@ def delete_user_by_id(user_id):
 
         response = {}
         # Insufficient Authorization is active: No admin check here.
+        # Any valid token (even non-admin) will allow user deletion.
         if (
             isinstance(token_record, tuple)
             and token_record[1] == str(token)
@@ -420,7 +422,14 @@ def delete_user_by_id(user_id):
         return json.dumps(response, indent=2)
     finally:
         c.close()
-        conn.close()
+        conn.close()  # Закрываем соединение
+
+
+# Removed the /uptime endpoint and its associated command injection logic as per user request.
+# @route("/uptime", method="GET")
+# def display_uptime():
+#     # ... (removed content) ...
+#     pass
 
 
 @hook("after_request")
@@ -437,4 +446,5 @@ def enable_cors():
 
 
 init_db()
+
 run(host="0.0.0.0", port=8081, debug=True, reloader=True)
