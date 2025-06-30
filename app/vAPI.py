@@ -1,24 +1,3 @@
-"""
-This API interacts with a user and token database.
-The code is written to exemplify common API security vulnerabilities
-based on user's confirmed list.
-
-Confirmed active vulnerabilities:
-1. SQL Injection (SQL queries are not parameterized)
-2. Information Disclosure (undocumented GET /tokens route)
-3. User Enumeration (different error messages for login)
-4. Cleartext Password Storage (passwords not hashed)
-5. Insufficient Authorization (non-admin can create/delete users)
-6. Debug Mode Information Disclosure (debug=True)
-7. XXE (XML External Entity)
-8. CORS Misconfiguration (Access-Control-Allow-Origin: *)
-9. Token Expiration (tokens don't expire on use)
-
-Removed/Fixed to meet user's explicit request:
-- Command Injection (removed /uptime endpoint)
-- ReDoS specific regex (replaced with basic non-empty check)
-"""
-
 import hashlib
 import json
 import os
@@ -102,6 +81,7 @@ def init_db():
                 print(f"Existing token for admin_super: {existing_token[1]}")
         else:
             print("Admin_super user not found during initial token setup.")
+
     except Exception as e:
         print(f"Error initializing token for admin_super: {e}")
 
@@ -384,4 +364,5 @@ def enable_cors():
 
 
 init_db()
+
 run(host="0.0.0.0", port=8081, debug=True, reloader=True)
