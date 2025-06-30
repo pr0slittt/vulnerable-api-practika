@@ -50,7 +50,7 @@ jobs:
       - name: Upload Semgrep SARIF results
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'semgrep-results.sarif'
+          sarif_file: ${{ github.workspace }}/semgrep-results.sarif
           wait-for-processing: true
 
       - name: Upload Semgrep SARIF Artifact
@@ -91,7 +91,7 @@ jobs:
       - name: Upload Grype SARIF results
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'grype-results.sarif'
+          sarif_file: ${{ github.workspace }}/grype-results.sarif
           wait-for-processing: true
 
       - name: Upload Grype SARIF Artifact
@@ -101,7 +101,7 @@ jobs:
           path: grype-results.sarif
           retention-days: 5
 
-  docker-publish:
+  docker-build-and-trivy:
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.set-tag.outputs.image_tag }}
@@ -109,42 +109,32 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PAT }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Set and push Docker image
+      - name: Build Docker Image
         id: set-tag
         run: |
-          IMAGE_TAG=ghcr.io/${{ github.repository }}:latest
-          docker build -t "$IMAGE_TAG" .
-          docker push "$IMAGE_TAG"
-          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-  docker-build-and-trivy:
-    runs-on: ubuntu-latest
-    needs: docker-publish
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+          docker build -t vulnerable-api:latest .
+          echo "image_tag=vulnerable-api:latest" >> $GITHUB_OUTPUT
 
       - name: Run Trivy Scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ needs.docker-publish.outputs.image_tag }}
+          image-ref: 'vulnerable-api:latest'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'HIGH,CRITICAL'
           ignore-unfixed: true
         continue-on-error: true
 
+      - name: List files after Trivy scan
+        run: ls -l ${{ github.workspace }}
+
       - name: Upload Trivy SARIF results
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: ${{ github.workspace }}/trivy-results.sarif
           wait-for-processing: true
 
       - name: Upload Trivy SARIF Artifact
@@ -156,7 +146,7 @@ jobs:
 
   zap-dast:
     runs-on: ubuntu-latest
-    needs: docker-publish
+    needs: [docker-build-and-trivy, semgrep-sast, grype-sca]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -168,6 +158,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_PAT }}
 
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Create Docker network
         run: docker network create zap-net || true
 
@@ -175,7 +171,7 @@ jobs:
         run: |
           docker run -d --rm --network zap-net --name vulnerable-api \
             -p 8081:8081 \
-            ${{ needs.docker-publish.outputs.image_tag }}
+            ghcr.io/pr0slittt/vulnerable-api-practika:latest
 
       - name: Wait for API readiness
         run: |
@@ -193,14 +189,13 @@ jobs:
         run: docker logs vulnerable-api || echo "No logs"
 
       - name: Run OWASP ZAP baseline scan
-        run: |
-          docker pull ghcr.io/zaproxy/zaproxy:stable
-          docker run --rm --network zap-net \
-            --user 0 \
-            -v "${{ github.workspace }}":/zap/wrk:rw \
-            ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py -t http://vulnerable-api:8081 -I \
-            -r zap-report.html -J zap-report.json -x zap-report.xml
+        uses: zaproxy/action-baseline@v0.10.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          target: 'http://vulnerable-api:8081'
+          docker_name: 'ghcr.io/zaproxy/zaproxy:stable'
+          artifact_name: zap-reports
+          cmd_options: '-I -r zap-report.html -J zap-report.json -x zap-report.xml'
 
       - name: Upload ZAP reports
         uses: actions/upload-artifact@v4
