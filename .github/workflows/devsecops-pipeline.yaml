@@ -19,7 +19,7 @@ jobs:
             p/python
             p/security-audit
             ./semgrep-rules
-        continue-on-error: true
+        continue-on-error: false
 
       - name: Upload Semgrep SARIF report
         if: always()
@@ -39,7 +39,7 @@ jobs:
         run: docker build -t vulnerable-api:latest .
 
       - name: Run Trivy Container Scan
-        uses: aquasecurity/trivy-action@v0.30.0
+        uses: aquasecurity/trivy-action@v0.29.0
         with:
           image-ref: vulnerable-api:latest
           format: sarif
@@ -62,22 +62,23 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Install Grype
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
-
-      - name: Build Docker image for Grype scan
+      - name: Build vulnerable-api Docker image
         run: docker build -t vulnerable-api:latest .
 
-      - name: Run Grype vulnerability scan
-        run: grype vulnerable-api:latest -o sarif > grype-results.sarif
+      - name: Run Grype Scan
+        uses: anchore/grype-action@v1
+        with:
+          image: vulnerable-api:latest
+          output: json
+          output-file: grype-results.json
         continue-on-error: true
 
-      - name: Upload Grype SARIF report
+      - name: Upload Grype Scan report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: grype-report
-          path: grype-results.sarif
+          path: grype-results.json
 
   zap_scan:
     runs-on: ubuntu-latest
