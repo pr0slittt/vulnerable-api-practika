@@ -1,3 +1,5 @@
+# .github/workflows/devsecops-pipeline.yaml
+
 name: DevSecOps Pipeline
 
 on:
@@ -88,6 +90,35 @@ jobs:
           name: grype-sarif-report
           path: grype-results.sarif
           retention-days: 5
+
+  # Новый job для Checkov IaC сканирования
+  checkov_iac_scan:
+    name: Checkov IaC Scan
+    runs-on: ubuntu-latest # Использовать последнюю версию Ubuntu для выполнения джоба
+    steps:
+      - name: Checkout Repository # Шаг для клонирования вашего репозитория
+        uses: actions/checkout@v4 # Использовать action для чекаута кода
+
+      - name: Run Checkov IaC Scan # Шаг для запуска сканирования Checkov
+        id: checkov # ID для этого шага, чтобы можно было ссылаться на его вывод
+        uses: bridgecrewio/checkov-action@v12 # Использовать официальный action Checkov
+        with:
+          directory: . # Сканировать текущую директорию (весь репозиторий)
+                       # Это покроет Dockerfile, docker-compose.yaml и любые другие
+                       # поддерживаемые IaC-файлы, которые могут быть добавлены позже.
+          framework: dockerfile,kubernetes,terraform,cloudformation,arm,ansible,serverless # Указать фреймворки для сканирования
+                                                                                            # Checkov автоматически определит тип файла.
+          output_format: cli # Формат вывода в консоль GitHub Actions
+          output_file_path: checkov_results.sarif # Сохранить результаты в файл SARIF для последующего анализа (опционально)
+          # soft_fail: true # Если вы хотите, чтобы пайплайн не падал при обнаружении уязвимостей, раскомментируйте эту строку.
+                            # По умолчанию, Checkov завершится с ошибкой, если найдены уязвимости.
+
+      - name: Upload SARIF report # Шаг для загрузки SARIF отчета в GitHub Security tab (опционально)
+        if: always() # Запускать этот шаг всегда, даже если предыдущий шаг завершился с ошибкой
+        uses: github/codeql-action/upload-sarif@v3 # Использовать action для загрузки SARIF
+        with:
+          sarif_file: checkov_results.sarif # Путь к файлу SARIF, созданному Checkov
+          category: Checkov # Категория для отчета в GitHub Security
 
   docker-build-and-trivy:
     runs-on: ubuntu-latest
