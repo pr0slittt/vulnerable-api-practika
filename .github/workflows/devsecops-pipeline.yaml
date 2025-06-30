@@ -31,9 +31,10 @@ jobs:
       - name: Run Semgrep SAST Scan
         uses: returntocorp/semgrep-action@v1
         with:
-          config: "p/python,p/security-audit,semgrep-rules/"
           sarif: semgrep-results.sarif
           output: semgrep-results.sarif
+          args: |
+            --config p/python --config p/security-audit --config semgrep-rules/ ./app
         continue-on-error: true
 
       - name: Upload Semgrep SARIF results
