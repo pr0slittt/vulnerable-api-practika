@@ -45,6 +45,7 @@ jobs:
         with:
           sarif_file: 'semgrep-results.sarif'
           wait-for-processing: true
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -61,8 +62,10 @@ jobs:
           path: ~/.grype/db
           key: ${{ runner.os }}-grype-db-${{ hashFiles('grype-db-version.txt') }}
           restore-keys: ${{ runner.os }}-grype-db-
+
       - name: Create Grype DB Version File
         run: echo "1" > grype-db-version.txt
+
       - name: Install Grype
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
@@ -77,6 +80,7 @@ jobs:
         with:
           sarif_file: 'grype-results.sarif'
           wait-for-processing: true
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -90,23 +94,31 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
       - name: Run Checkov IaC Scan
         id: checkov
-        uses: bridgecrewio/checkov-action@v14
+        uses: bridgecrewio/checkov-action@v12
         with:
           directory: .
           framework: dockerfile,kubernetes,terraform,cloudformation,arm,ansible,serverless
           output_format: sarif
-          output_file_path: checkov_results.sarif
-          soft_fail: true
+          output_file_path: checkov_results.sarif/results_sarif.sarif
+
       - name: Upload SARIF report
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: checkov_results.sarif
+          sarif_file: checkov_results.sarif/results_sarif.sarif
           category: Checkov
           checkout_path: ${{ github.workspace }}
           wait-for-processing: true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checkov-sarif-report
+          path: checkov_results.sarif/results_sarif.sarif
+          retention-days: 5
 
   docker-build-and-trivy:
     runs-on: ubuntu-latest
@@ -115,6 +127,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+
       - name: Build Docker Image
         id: set-tag
         run: |
@@ -128,10 +141,12 @@ jobs:
           severity: 'HIGH,CRITICAL'
           ignore-unfixed: true
         continue-on-error: true
+
       - uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
           wait-for-processing: true
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -143,13 +158,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_PAT }}
+
       - name: Create Docker network
         run: docker network create zap-net || true
+
       - name: Run vulnerable-api container
         run: |
           docker run -d --rm --network zap-net --name vulnerable-api \
@@ -168,6 +186,7 @@ jobs:
           done
       - name: Fix permissions for workspace folder
         run: sudo chmod -R a+w ${{ github.workspace }}
+
       - name: Run OWASP ZAP baseline scan manually
         run: |
           docker run --rm --network zap-net -v ${{ github.workspace }}:/zap/wrk/:rw ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
