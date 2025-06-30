@@ -39,7 +39,7 @@ jobs:
         run: docker build -t vulnerable-api:latest .
 
       - name: Run Trivy Container Scan
-        uses: aquasecurity/trivy-action@0.28.0  # ✅ Без 'v'
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: vulnerable-api:latest
           format: sarif
@@ -65,12 +65,13 @@ jobs:
       - name: Build vulnerable-api Docker image
         run: docker build -t vulnerable-api:latest .
 
-      - name: Run Grype scan
-        uses: anchore/grype-action@v0.13.0
+      - name: Run Grype scan with Anchore Scan Action
+        uses: anchore/scan-action@v3
         with:
           image: vulnerable-api:latest
-          output: sarif
-          fail-on-severity: high
+          format: sarif
+          output-file: grype-results.sarif
+          severity-cutoff: high
         continue-on-error: true
 
       - name: Upload Grype SARIF report
