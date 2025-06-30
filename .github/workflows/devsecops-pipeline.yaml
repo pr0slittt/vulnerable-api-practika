@@ -138,7 +138,7 @@ jobs:
           image-ref: 'vulnerable-api:latest'
           format: 'sarif'
           output: 'trivy-results.sarif'
-          severity: 'HIGH,CRITICAL'
+          severity: 'LOW,MEDIUM,HIGH,CRITICAL'   # <- вот эта строка обновлена
           ignore-unfixed: true
         continue-on-error: true
 
