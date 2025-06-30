@@ -24,7 +24,6 @@ jobs:
           set -euxo pipefail
           echo "Starting Semgrep CLI scan. PWD: $(pwd)"
           
-          # Отладочный вывод: Список файлов в текущей директории и в папке app
           echo "Listing files in current directory (should contain semgrep-rules/):"
           ls -l .
           echo "Listing files in app/ directory:"
@@ -44,7 +43,6 @@ jobs:
           
           SEMGREP_EXIT_CODE=$?
           echo "Semgrep scan finished. Raw exit code: $SEMGREP_EXIT_CODE"
-          
           echo "semgrep_exit_code=$SEMGREP_EXIT_CODE" >> "$GITHUB_OUTPUT"
 
           if [ ! -f "$SARIF_OUTPUT_PATH" ]; then
@@ -60,9 +58,8 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'semgrep-results.sarif'
-          checkout_path: ${{ github.workspace }}
-          wait-for-processing: true
           token: ${{ secrets.GITHUB_TOKEN }}
+          wait-for-processing: true
 
       - name: Upload Semgrep SARIF as Artifact
         uses: actions/upload-artifact@v4
