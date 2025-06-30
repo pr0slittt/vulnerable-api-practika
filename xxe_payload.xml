@@ -1,10 +1,10 @@
-<?xml version="1.0"?>
-<!DOCTYPE foo [
-  <!ENTITY xxe SYSTEM "file:///etc/hostname">
+<!DOCTYPE test [
+  <!ENTITY % dtd SYSTEM "file:///C:/Windows/win.ini">
+  %dtd;
 ]>
 <auth>
     <passwordCredentials>
-        <username>&xxe;</username>
-        <password>pass</password>
+        <username>testuser</username>
+        <password>testpass</password>
     </passwordCredentials>
 </auth>
