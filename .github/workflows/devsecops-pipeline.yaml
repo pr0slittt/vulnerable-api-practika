@@ -34,7 +34,7 @@ jobs:
           config: "p/python,p/security-audit,semgrep-rules/"
           sarif: semgrep-results.sarif
           output: semgrep-results.sarif
-          continue-on-error: true
+        continue-on-error: true
 
       - name: Upload Semgrep SARIF results
         uses: github/codeql-action/upload-sarif@v3
@@ -60,12 +60,11 @@ jobs:
         run: echo "1" > grype-db-version.txt
 
       - name: Run Grype SCA Scan
-        uses: anchore/grype-action@v1
+        uses: anchore/scan-action@v2
         with:
           scan-path: ./app
-          output: sarif
-          output-file: grype-results.sarif
-          continue-on-error: true
+          sarif-output: grype-results.sarif
+        continue-on-error: true
 
       - name: Upload Grype SARIF results
         uses: github/codeql-action/upload-sarif@v3
