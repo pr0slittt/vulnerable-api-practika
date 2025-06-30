@@ -60,8 +60,9 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'semgrep-results.sarif'
+          checkout_path: ${{ github.workspace }}
           wait-for-processing: true
-          working-directory: ${{ github.workspace }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Semgrep SARIF as Artifact
         uses: actions/upload-artifact@v4
@@ -169,12 +170,12 @@ jobs:
         run: |
           docker pull ghcr.io/zaproxy/zaproxy:stable
           docker run --rm --network zap-net \
-            --user 0 \
-            -v "${{ github.workspace }}":/zap/wrk:rw \
-            -v "${{ github.workspace }}/zap-rules:/zap/scripts/:ro" \
-            ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py -t http://vulnerable-api:8081 -I \
-            -r zap-report.html -J zap-report.json -x zap-report.xml
+          --user 0 \
+          -v "${{ github.workspace }}":/zap/wrk:rw \
+          -v "${{ github.workspace }}/zap-rules:/zap/scripts/:ro" \
+          ghcr.io/zaproxy/zaproxy:stable \
+          zap-baseline.py -t http://vulnerable-api:8081 -I \
+          -r zap-report.html -J zap-report.json -x zap-report.xml
 
       - name: Upload ZAP scan reports
         uses: actions/upload-artifact@v4
