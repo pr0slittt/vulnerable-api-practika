@@ -99,39 +99,33 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Create Docker network
+        uses: docker://docker
+        with:
+          args: network create zap-net || true
+
       - name: Run vulnerable-api container
-        run: |
-          docker run -d --rm --name vulnerable-api \
-          -p 8081:8081 \
-          ghcr.io/pr0slittt/vulnerable-api-practika:latest
+        uses: docker://docker
+        with:
+          args: run -d --rm --network zap-net --name vulnerable-api -p 8081:8081 ghcr.io/pr0slittt/vulnerable-api-practika:latest
 
       - name: Wait for vulnerable-api to be ready
-        run: |
-          for i in {1..15}; do
-            if curl -s http://localhost:8081; then
-              echo "API is up"
-              break
-            else
-              echo "Waiting for API..."
-              sleep 2
-            fi
-          done
-
-      - name: Show vulnerable-api logs
-        run: docker logs vulnerable-api || echo "No logs"
+        uses: andstor/wait-for-http-action@v1
+        with:
+          url: http://localhost:8081
+          timeout: 30
 
       - name: Run OWASP ZAP baseline scan
-        uses: zaproxy/action-baseline@v0.9.0
+        uses: docker://ghcr.io/zaproxy/zaproxy:stable
         with:
-          target: 'http://localhost:8081'
-          cmd_options: '-I --auto'
-          docker_name: 'ghcr.io/zaproxy/zaproxy:stable'
-          fail_action: false
-          allow_issue_writing: false
-          artifact_name: 'zap_scan'
+          args: zap-baseline.py -t http://vulnerable-api:8081 -I --auto -r zap-report.html -J zap-report.json -x zap-report.xml -w zap-report.md
 
-      - name: Upload ZAP report
+      - name: Upload ZAP reports
         uses: actions/upload-artifact@v4
         with:
-          name: zap-report
-          path: report_html.html
+          name: zap-reports
+          path: |
+            zap-report.html
+            zap-report.json
+            zap-report.xml
+            zap-report.md
