@@ -14,9 +14,11 @@ jobs:
   semgrep-sast:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
@@ -42,15 +44,17 @@ jobs:
             -o "$SARIF_OUTPUT_PATH" \
             ./app \
             --verbose || true
+          
           echo "semgrep_exit_code=$?" >> "$GITHUB_OUTPUT"
 
-      - uses: github/codeql-action/upload-sarif@v3
+      - name: Upload Semgrep SARIF results
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'semgrep-results.sarif'
           wait-for-processing: true
 
-      - uses: actions/upload-artifact@v4
-        if: always()
+      - name: Upload Semgrep SARIF Artifact
+        uses: actions/upload-artifact@v4
         with:
           name: semgrep-sarif-report
           path: semgrep-results.sarif
@@ -59,9 +63,11 @@ jobs:
   grype-sca:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: actions/cache@v3
+      - name: Cache Grype DB
+        uses: actions/cache@v3
         with:
           path: ~/.grype/db
           key: ${{ runner.os }}-grype-db-${{ hashFiles('grype-db-version.txt') }}
@@ -82,49 +88,67 @@ jobs:
           grype dir:./app -o sarif --file "$GRYPE_OUTPUT_PATH" || true
           echo "grype_exit_code=$?" >> "$GITHUB_OUTPUT"
 
-      - uses: github/codeql-action/upload-sarif@v3
+      - name: Upload Grype SARIF results
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'grype-results.sarif'
           wait-for-processing: true
 
-      - uses: actions/upload-artifact@v4
-        if: always()
+      - name: Upload Grype SARIF Artifact
+        uses: actions/upload-artifact@v4
         with:
           name: grype-sarif-report
           path: grype-results.sarif
           retention-days: 5
 
-  docker-build-and-trivy:
+  docker-publish:
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.set-tag.outputs.image_tag }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}
 
-      - name: Build Docker Image
+      - name: Set and push Docker image
         id: set-tag
         run: |
-          docker build -t vulnerable-api:latest .
-          echo "image_tag=vulnerable-api:latest" >> $GITHUB_OUTPUT
+          IMAGE_TAG=ghcr.io/${{ github.repository }}:latest
+          docker build -t "$IMAGE_TAG" .
+          docker push "$IMAGE_TAG"
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-      - uses: aquasecurity/trivy-action@master
+  docker-build-and-trivy:
+    runs-on: ubuntu-latest
+    needs: docker-publish
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy Scan
+        uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'vulnerable-api:latest'
+          image-ref: ${{ needs.docker-publish.outputs.image_tag }}
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'HIGH,CRITICAL'
           ignore-unfixed: true
         continue-on-error: true
 
-      - uses: github/codeql-action/upload-sarif@v3
+      - name: Upload Trivy SARIF results
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
           wait-for-processing: true
 
-      - uses: actions/upload-artifact@v4
-        if: always()
+      - name: Upload Trivy SARIF Artifact
+        uses: actions/upload-artifact@v4
         with:
           name: trivy-sarif-report
           path: trivy-results.sarif
@@ -137,7 +161,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Log in to GHCR
+      - name: Login to GHCR
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
@@ -164,6 +188,9 @@ jobs:
               sleep 2
             fi
           done
+
+      - name: Show vulnerable-api logs
+        run: docker logs vulnerable-api || echo "No logs"
 
       - name: Run OWASP ZAP baseline scan
         run: |
