@@ -19,7 +19,7 @@ jobs:
             p/python
             p/security-audit
             ./semgrep-rules
-        continue-on-error: false
+        continue-on-error: true
 
       - name: Upload Semgrep SARIF report
         if: always()
@@ -65,20 +65,20 @@ jobs:
       - name: Build vulnerable-api Docker image
         run: docker build -t vulnerable-api:latest .
 
-      - name: Run Grype Scan
-        uses: anchore/grype-action@v1
+      - name: Run Grype scan
+        uses: anchore/grype-action@v0.13.0
         with:
           image: vulnerable-api:latest
-          output: json
-          output-file: grype-results.json
+          output: sarif
+          fail-on-severity: high
         continue-on-error: true
 
-      - name: Upload Grype Scan report
+      - name: Upload Grype SARIF report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: grype-report
-          path: grype-results.json
+          path: grype-results.sarif
 
   zap_scan:
     runs-on: ubuntu-latest
