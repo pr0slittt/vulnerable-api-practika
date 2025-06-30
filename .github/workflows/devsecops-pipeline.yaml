@@ -7,69 +7,115 @@ on:
     branches: [main, master]
 
 jobs:
-  setup:
+  semgrep-sast:
     runs-on: ubuntu-latest
-    outputs:
-      image_tag: ${{ steps.set_tag.outputs.image_tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set Docker image tag
-        id: set_tag
-        run: echo "image_tag=vulnerable-api:latest" >> "$GITHUB_OUTPUT"
-
-  sast-semgrep:
-    needs: setup
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: |
-          pip install --upgrade pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Install Semgrep CLI
+        run: |
           pip install "semgrep>=1.76.0"
           semgrep --version
-      - run: |
-          semgrep --config p/python --config p/security-audit \
-            --sarif -o semgrep-results.sarif ./app || true
-      - uses: github/codeql-action/upload-sarif@v3
+
+      - name: Run Semgrep SAST Scan
+        id: semgrep_scan_run
+        run: |
+          SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
+          semgrep \
+            --config "p/python" \
+            --config "p/security-audit" \
+            --config "semgrep-rules/" \
+            --sarif \
+            -o "$SARIF_OUTPUT_PATH" \
+            ./app \
+            --verbose || true
+          
+          echo "semgrep_exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Semgrep SARIF results
+        uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: semgrep-results.sarif
-      - uses: actions/upload-artifact@v4
+          sarif_file: 'semgrep-results.sarif'
+          wait-for-processing: true
+
+      - name: Upload Semgrep SARIF Artifact
+        uses: actions/upload-artifact@v4
         with:
           name: semgrep-sarif-report
           path: semgrep-results.sarif
+          retention-days: 5
 
-  sca-grype:
-    needs: setup
+  grype-sca:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cache Grype DB
+        uses: actions/cache@v3
+        with:
+          path: ~/.grype/db
+          key: ${{ runner.os }}-grype-db-${{ hashFiles('grype-db-version.txt') }}
+          restore-keys: ${{ runner.os }}-grype-db-
+
+      - name: Create Grype DB Version File
+        run: echo "1" > grype-db-version.txt
+
       - name: Install Grype
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
-      - name: Run Grype scan
+          grype version
+
+      - name: Run Grype SCA Scan
+        id: grype_scan_run
         run: |
-          grype dir:./app -o sarif --file grype-results.sarif || true
-      - uses: github/codeql-action/upload-sarif@v3
+          GRYPE_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
+          grype dir:./app -o sarif --file "$GRYPE_OUTPUT_PATH" || true
+          echo "grype_exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Grype SARIF results
+        uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: grype-results.sarif
-      - uses: actions/upload-artifact@v4
+          sarif_file: 'grype-results.sarif'
+          wait-for-processing: true
+
+      - name: Upload Grype SARIF Artifact
+        uses: actions/upload-artifact@v4
         with:
           name: grype-sarif-report
           path: grype-results.sarif
+          retention-days: 5
 
-  container-build-and-trivy:
-    needs: setup
+  docker-build-and-trivy:
     runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.set-tag.outputs.image_tag }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - run: docker build -t vulnerable-api:latest .
-      - uses: aquasecurity/trivy-action@master
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Image
+        id: set-tag
+        run: |
+          docker build -t vulnerable-api:latest .
+          echo "image_tag=vulnerable-api:latest" >> $GITHUB_OUTPUT
+
+      - name: Run Trivy Scan
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: 'vulnerable-api:latest'
           format: 'sarif'
@@ -77,37 +123,76 @@ jobs:
           severity: 'HIGH,CRITICAL'
           ignore-unfixed: true
         continue-on-error: true
-      - uses: github/codeql-action/upload-sarif@v3
+
+      - name: Upload Trivy SARIF results
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
-      - uses: actions/upload-artifact@v4
+          wait-for-processing: true
+
+      - name: Upload Trivy SARIF Artifact
+        uses: actions/upload-artifact@v4
         with:
           name: trivy-sarif-report
           path: trivy-results.sarif
+          retention-days: 5
 
-  dast-zap:
-    needs: container-build-and-trivy
+  zap-dast:
     runs-on: ubuntu-latest
+    needs: docker-build-and-trivy
     steps:
-      - uses: actions/checkout@v4
-      - name: Run container
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Create Docker network
+        run: docker network create zap-net || true
+
+      - name: Run vulnerable-api container
         run: |
-          docker network create zap-net || true
           docker run -d --rm --network zap-net --name vulnerable-api \
             -p 8081:8081 \
             ghcr.io/pr0slittt/vulnerable-api-practika:latest
-      - name: Wait for API
+
+      - name: Wait for API readiness
         run: |
-          for i in {1..15}; do curl -s http://localhost:8081 && break || sleep 2; done
-      - name: ZAP scan
+          for i in {1..15}; do
+            if curl -s http://localhost:8081; then
+              echo "API is up"
+              break
+            else
+              echo "Waiting for API..."
+              sleep 2
+            fi
+          done
+
+      - name: Show vulnerable-api logs
+        run: docker logs vulnerable-api || echo "No logs"
+
+      - name: Run OWASP ZAP baseline scan
         run: |
           docker pull ghcr.io/zaproxy/zaproxy:stable
           docker run --rm --network zap-net \
+            --user 0 \
             -v "${{ github.workspace }}":/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py -t http://vulnerable-api:8081 -I \
             -r zap-report.html -J zap-report.json -x zap-report.xml
-      - uses: actions/upload-artifact@v4
+
+      - name: Upload ZAP reports
+        uses: actions/upload-artifact@v4
         with:
           name: zap-reports
           path: |
