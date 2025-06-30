@@ -21,7 +21,13 @@ jobs:
             ./semgrep-rules
         continue-on-error: true
 
-      - name: Upload Semgrep SARIF report
+      - name: Upload Semgrep SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: semgrep-results.sarif
+
+      - name: Upload Semgrep SARIF report artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -48,7 +54,13 @@ jobs:
           ignore-unfixed: true
         continue-on-error: true
 
-      - name: Upload Trivy SARIF report
+      - name: Upload Trivy SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Upload Trivy SARIF report artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -72,7 +84,13 @@ jobs:
           output-format: sarif
         continue-on-error: true
 
-      - name: Upload Grype SARIF report
+      - name: Upload Grype SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: grype.sarif
+
+      - name: Upload Grype SARIF report artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -105,20 +123,15 @@ jobs:
       - name: Run vulnerable-api container
         run: |
           docker run -d --rm --network zap-net --name vulnerable-api \
-            -p 8081:8081 \
-            ghcr.io/pr0slittt/vulnerable-api-practika:latest
+          -p 8081:8081 \
+          ghcr.io/pr0slittt/vulnerable-api-practika:latest
 
       - name: Wait for vulnerable-api to be ready
-        run: |
-          for i in {1..15}; do
-            if curl -s http://localhost:8081; then
-              echo "API is up"
-              break
-            else
-              echo "Waiting for API..."
-              sleep 2
-            fi
-          done
+        uses: andstor/wait-for-http-action@v1
+        with:
+          url: http://localhost:8081
+          timeout: 30
+          interval: 2
 
       - name: Show vulnerable-api logs
         run: docker logs vulnerable-api || echo "No logs"
@@ -127,17 +140,17 @@ jobs:
         run: |
           docker pull ghcr.io/zaproxy/zaproxy:stable
           docker run --rm --network zap-net \
-          --user 0 \
-          -v "/home/runner/work/vulnerable-api-practika/vulnerable-api-practika":/zap/wrk:rw \
-          -v "/home/runner/work/vulnerable-api-practika/vulnerable-api-practika/zap-rules:/zap/scripts/:ro" \
-          ghcr.io/zaproxy/zaproxy:stable \
-          zap-baseline.py -t http://vulnerable-api:8081 -I \
-          -r zap-report.html -J zap-report.json -x zap-report.xml
+            --user 0 \
+            -v "${{ github.workspace }}":/zap/wrk:rw \
+            -v "${{ github.workspace }}/zap-rules":/zap/scripts/:ro \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://vulnerable-api:8081 -I \
+            -r zap-report.html -J zap-report.json -x zap-report.xml
 
       - name: Upload ZAP scan reports
         uses: actions/upload-artifact@v4
         with:
-          name: zap-reports
+          name: zap-report
           path: |
             zap-report.html
             zap-report.json
