@@ -31,23 +31,20 @@ jobs:
       - name: Run Semgrep SAST Scan
         uses: returntocorp/semgrep-action@v1
         with:
-          sarif: semgrep-results.sarif
-          output: semgrep-results.sarif
-          args: |
-            --config p/python --config p/security-audit --config semgrep-rules/ ./app
+          config: p/security-audit
         continue-on-error: true
 
       - name: Upload Semgrep SARIF results
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: semgrep-results.sarif
+          sarif_file: semgrep.sarif
           wait-for-processing: true
 
       - name: Upload Semgrep SARIF Artifact
         uses: actions/upload-artifact@v4
         with:
           name: semgrep-sarif-report
-          path: semgrep-results.sarif
+          path: semgrep.sarif
           retention-days: 5
 
       - name: Cache Grype DB
@@ -103,7 +100,7 @@ jobs:
       - name: Upload Trivy SARIF results
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: trivy-results.sarif
           wait-for-processing: true
 
       - name: Upload Trivy SARIF Artifact
