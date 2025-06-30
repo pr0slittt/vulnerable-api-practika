@@ -11,7 +11,6 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
-
       - name: Run Semgrep Scan
         uses: returntocorp/semgrep-action@v1
         with:
@@ -20,7 +19,6 @@ jobs:
             p/security-audit
             ./semgrep-rules
         continue-on-error: true
-
       - name: Upload Semgrep SARIF report
         if: always()
         uses: actions/upload-artifact@v4
@@ -34,12 +32,10 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
-
       - name: Build vulnerable-api Docker image
         run: docker build -t vulnerable-api:latest .
-
       - name: Run Trivy Container Scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: vulnerable-api:latest
           format: sarif
@@ -47,7 +43,6 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
         continue-on-error: true
-
       - name: Upload Trivy SARIF report
         if: always()
         uses: actions/upload-artifact@v4
@@ -61,23 +56,22 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
-
       - name: Build vulnerable-api Docker image
         run: docker build -t vulnerable-api:latest .
-
-      - name: Run Grype scan via GitHub Action
-        uses: anchore/grype-action@0.6.0
+      - name: Run Grype scan via Anchore Scan Action
+        uses: anchore/scan-action@v6
         with:
           image: vulnerable-api:latest
-          output: sarif
+          output-format: sarif
+          severity-cutoff: high
+          fail-build: false
         continue-on-error: true
-
       - name: Upload Grype SARIF report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: grype-report
-          path: grype.sarif
+          path: ${{ steps.grype-scan.outputs.sarif }}
 
   zap_scan:
     runs-on: ubuntu-latest
@@ -85,29 +79,24 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
-
       - name: Login to GHCR
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_PAT }}
-
       - name: Login to Docker Hub
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Create Docker network
         run: docker network create zap-net || true
-
       - name: Run vulnerable-api container
         run: |
           docker run -d --rm --network zap-net --name vulnerable-api \
-          -p 8081:8081 \
-          ghcr.io/pr0slittt/vulnerable-api-practika:latest
-
+            -p 8081:8081 \
+            ghcr.io/pr0slittt/vulnerable-api-practika:latest
       - name: Wait for vulnerable-api to be ready
         run: |
           for i in {1..15}; do
@@ -119,11 +108,9 @@ jobs:
               sleep 2
             fi
           done
-
       - name: Show vulnerable-api logs
         run: docker logs vulnerable-api || echo "No logs"
-
-      - name: Run OWASP ZAP baseline scan
+      - name: Run OWASP ZAP baseline scan (ignore warnings)
         uses: zaproxy/action-baseline@v0.9.0
         with:
           target: 'http://vulnerable-api:8081'
@@ -131,7 +118,6 @@ jobs:
           output: 'zap-report.html'
           failOnWarnings: false
           cmdOptions: '-I'
-
       - name: Upload ZAP report
         uses: actions/upload-artifact@v4
         with:
