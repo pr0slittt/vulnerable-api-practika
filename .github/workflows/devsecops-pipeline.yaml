@@ -132,19 +132,30 @@ jobs:
         id: set-tag
         run: |
           docker build -t vulnerable-api:latest .
-          echo "image_tag=vulnerable-api:latest" >> $GITHUB_OUTPUT
+
       - uses: aquasecurity/trivy-action@master
         with:
           image-ref: 'vulnerable-api:latest'
           format: 'sarif'
           output: 'trivy-results.sarif'
-          severity: 'LOW,MEDIUM,HIGH,CRITICAL'   # <- вот эта строка обновлена
-          ignore-unfixed: true
+          severity: 'LOW,MEDIUM,HIGH,CRITICAL'
+          # убрал ignore-unfixed, чтобы не фильтровались уязвимости без исправления
         continue-on-error: true
 
-      - uses: github/codeql-action/upload-sarif@v3
+      - name: Check if Trivy SARIF file exists
+        run: |
+          if [ ! -f trivy-results.sarif ]; then
+            echo "ERROR: SARIF file not found!"
+            exit 1
+          fi
+
+      - name: Upload Trivy SARIF report
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
+          category: Trivy
+          checkout_path: ${{ github.workspace }}
           wait-for-processing: true
 
       - uses: actions/upload-artifact@v4
