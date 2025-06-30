@@ -1,23 +1,23 @@
-# semgrep-rules/info-disclosure-tokens-get.yaml
 rules:
-  - id: information-disclosure-tokens-get
-    message: |
-      GET-метод для эндпоинта /tokens возвращает все данные пользователей, включая пароли.
-      Этот маршрут не задокументирован и является серьезной утечкой информации.
-    severity: ERROR
-    languages:
-      - python
+  - id: info-disclosure-tokens-get
     patterns:
-      # Совпадает с любой функцией, обслуживающей GET /tokens и выполняющей SELECT из таблицы users
       - pattern: |
           @route("/tokens", method="GET")
-          def $FUNC_NAME():
-            ...
-            $CURSOR.execute($QUERY)
-            ...
-      - metavariable-pattern:
-          metavariable: $QUERY
-          pattern-regex: 'SELECT\s+.*?\s+FROM\s+users'
+          def $FUNC(...):
+              ...
+              $QUERY = "SELECT id, username, password FROM users"
+              ...
+              return {"response": $DATA}
+    message: >
+      [Info Disclosure] Sensitive user data (including password) is being returned via a GET request to `/tokens`.
+      This endpoint is undocumented and should not expose credentials or user information.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+      owasp: "A3:2017 - Sensitive Data Exposure"
+      category: security
+      technology: bottle
     paths:
       include:
-        - vAPI.py
+        - "*.py"
