@@ -2,16 +2,12 @@ name: DevSecOps Pipeline
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
   pull_request:
-    branches:
-      - main
-      - master
+    branches: [main, master]
 
 jobs:
-  build-and-scan:
+  build-and-security-scan:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,58 +28,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install Semgrep CLI
-        run: |
-          set -euxo pipefail
-          pip install "semgrep>=1.76.0"
-          semgrep --version
-
       - name: Run Semgrep SAST Scan
-        id: semgrep_scan_run
-        run: |
-          set -euxo pipefail
-          echo "Starting Semgrep CLI scan. PWD: $(pwd)"
-          
-          echo "Listing files in current directory (should contain semgrep-rules/):"
-          ls -l .
-          echo "Listing files in app/ directory:"
-          ls -l ./app
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: "p/python,p/security-audit,semgrep-rules/"
+          sarif: semgrep-results.sarif
+          output: semgrep-results.sarif
+          continue-on-error: true
 
-          SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
-          echo "Semgrep output path set to: $SARIF_OUTPUT_PATH"
-
-          semgrep \
-            --config "p/python" \
-            --config "p/security-audit" \
-            --config "semgrep-rules/" \
-            --sarif \
-            -o "$SARIF_OUTPUT_PATH" \
-            ./app \
-            --verbose || true
-          
-          SEMGREP_EXIT_CODE=$?
-          echo "Semgrep scan finished. Raw exit code: $SEMGREP_EXIT_CODE"
-          
-          echo "semgrep_exit_code=$SEMGREP_EXIT_CODE" >> "$GITHUB_OUTPUT"
-
-          if [ ! -f "$SARIF_OUTPUT_PATH" ]; then
-            echo "ERROR: semgrep-results.sarif was NOT created by Semgrep!"
-            exit 1
-          else
-            echo "Semgrep SARIF file created. Size: $(du -h "$SARIF_OUTPUT_PATH" | awk '{print $1}')"
-            echo "First 100 lines of semgrep-results.sarif:"
-            head -n 100 "$SARIF_OUTPUT_PATH"
-          fi
-
-      - name: Upload Semgrep SARIF results to GitHub Security
+      - name: Upload Semgrep SARIF results
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'semgrep-results.sarif'
-          token: ${{ secrets.GITHUB_TOKEN }}
+          sarif_file: semgrep-results.sarif
           wait-for-processing: true
-          checkout_path: ${{ github.workspace }}
 
-      - name: Upload Semgrep SARIF as Artifact
+      - name: Upload Semgrep SARIF Artifact
         uses: actions/upload-artifact@v4
         with:
           name: semgrep-sarif-report
@@ -95,45 +54,26 @@ jobs:
         with:
           path: ~/.grype/db
           key: ${{ runner.os }}-grype-db-${{ hashFiles('grype-db-version.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-grype-db-
+          restore-keys: ${{ runner.os }}-grype-db-
 
       - name: Create Grype DB Version File
         run: echo "1" > grype-db-version.txt
 
-      - name: Download Grype
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
-          grype version
+      - name: Run Grype SCA Scan
+        uses: anchore/grype-action@v1
+        with:
+          scan-path: ./app
+          output: sarif
+          output-file: grype-results.sarif
+          continue-on-error: true
 
-      - name: Run Grype SCA Scan and Save SARIF
-        id: grype_scan_run
-        run: |
-          set -euxo pipefail
-          echo "Starting Grype scan. PWD: $(pwd)"
-          GRYPE_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
-          echo "Grype output path set to: $GRYPE_OUTPUT_PATH"
-          grype dir:./app -o sarif --file "$GRYPE_OUTPUT_PATH" || true
-          
-          GRYPE_EXIT_CODE=$?
-          echo "Grype scan finished. Raw exit code: $GRYPE_EXIT_CODE"
-          echo "grype_exit_code=$GRYPE_EXIT_CODE" >> "$GITHUB_OUTPUT"
-
-          if [ ! -f "$GRYPE_OUTPUT_PATH" ]; then
-            echo "ERROR: grype-results.sarif was NOT created by Grype!"
-            exit 1
-          fi
-
-      - name: Upload SARIF results to GitHub Security tab (Grype)
-        if: always()
+      - name: Upload Grype SARIF results
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'grype-results.sarif'
-          token: ${{ secrets.GITHUB_TOKEN }}
+          sarif_file: grype-results.sarif
           wait-for-processing: true
-          checkout_path: ${{ github.workspace }}
 
-      - name: Upload Grype SARIF as Artifact
+      - name: Upload Grype SARIF Artifact
         uses: actions/upload-artifact@v4
         with:
           name: grype-sarif-report
@@ -144,10 +84,13 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker Image
-        run: |
-          docker build -t vulnerable-api:latest .
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: false
+          tags: vulnerable-api:latest
 
-      - name: Run Trivy Container Scan
+      - name: Run Trivy Scan
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: 'vulnerable-api:latest'
@@ -157,18 +100,69 @@ jobs:
           ignore-unfixed: true
         continue-on-error: true
 
-      - name: Upload Trivy SARIF results to GitHub Security
-        if: always()
+      - name: Upload Trivy SARIF results
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
-          token: ${{ secrets.GITHUB_TOKEN }}
           wait-for-processing: true
-          checkout_path: ${{ github.workspace }}
 
-      - name: Upload Trivy SARIF as Artifact
+      - name: Upload Trivy SARIF Artifact
         uses: actions/upload-artifact@v4
         with:
           name: trivy-sarif-report
           path: trivy-results.sarif
           retention-days: 5
+
+      - name: Login to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Create Docker network
+        run: docker network create zap-net || true
+
+      - name: Run vulnerable-api container
+        run: |
+          docker run -d --rm --network zap-net --name vulnerable-api \
+            -p 8081:8081 \
+            ghcr.io/pr0slittt/vulnerable-api-practika:latest
+
+      - name: Wait for API readiness
+        run: |
+          for i in {1..15}; do
+            if curl -s http://localhost:8081; then
+              echo "API is up"
+              break
+            else
+              echo "Waiting for API..."
+              sleep 2
+            fi
+          done
+
+      - name: Show vulnerable-api logs
+        run: docker logs vulnerable-api || echo "No logs"
+
+      - name: Run OWASP ZAP baseline scan
+        uses: zaproxy/action-baseline@v0.6.0
+        with:
+          target: 'http://vulnerable-api:8081'
+          report_format: 'all'
+          report_name: 'zap-report'
+          cmd_options: '-I'
+
+      - name: Upload ZAP reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-reports
+          path: |
+            zap-report.html
+            zap-report.json
+            zap-report.xml
