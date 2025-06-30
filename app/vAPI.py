@@ -12,11 +12,7 @@ Confirmed active vulnerabilities:
 6. Debug Mode Information Disclosure (debug=True)
 7. XXE (XML External Entity)
 8. CORS Misconfiguration (Access-Control-Allow-Origin: *)
-9. Token Expiration (tokens don't expire on use)
 
-Removed/Fixed to meet user's explicit request:
-- Command Injection (removed /uptime endpoint)
-- ReDoS specific regex (replaced with basic non-empty check)
 """
 
 import hashlib
@@ -31,10 +27,9 @@ from datetime import datetime, timedelta
 from bottle import debug, hook, request
 from bottle import response as resp
 from bottle import route, run
-from lxml import etree  # Используем lxml для XXE (он более уязвим к некоторым атакам)
+from lxml import etree
 
 
-# Инициализация базы данных (в продакшене БД инициализируется отдельно)
 def init_db():
     conn = sqlite3.connect("vAPI.db")
     c = conn.cursor()
@@ -51,7 +46,6 @@ def init_db():
     )
     conn.commit()
 
-    # Создаем таблицу токенов, если она не существует
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS tokens (
@@ -65,7 +59,6 @@ def init_db():
     )
     conn.commit()
 
-    # Добавляем начальных пользователей, если их нет
     # Уязвимость: Пароли хранятся в открытом виде (Cleartext Password Storage)
     initial_users = [
         ("admin", "password"),
@@ -81,17 +74,15 @@ def init_db():
             )
             conn.commit()
         except sqlite3.IntegrityError:
-            # Пользователь уже существует, пропускаем
+
             pass
 
-    # Добавляем начальные токены для admin_super, если их нет, для удобства тестирования
     try:
         current_time = int(time.time())
         expire_stamp = current_time + 300  # Токен истекает через 5 минут
         expire_date_str = time.ctime(expire_stamp)
         token_str = hashlib.md5(expire_date_str.encode("utf-8")).hexdigest()
 
-        # Проверяем, существует ли уже токен для admin_super (userid 10)
         c.execute("SELECT * FROM users WHERE username = 'admin_super'")
         admin_super_user = c.fetchone()
         if admin_super_user:
@@ -115,7 +106,7 @@ def init_db():
         print(f"Error initializing token for admin_super: {e}")
 
     c.close()
-    conn.close()  # Важно: закрываем соединение после инициализации
+    conn.close()
 
 
 @route("/", method="GET")
@@ -255,13 +246,10 @@ def get_token():
 
 @route("/tokens", method="GET")
 def get_get_token():
-    """
-    This is an undocumented request. EASTER EGG (Information Disclosure vulnerability remains active)
-    /tokens is only supposed to accept a POST! Are you checking the other verbs?
-    """
+
     conn = sqlite3.connect("vAPI.db")
     c = conn.cursor()
-    query = "SELECT id, username, password FROM users"  # Returns all users (Information Disclosure & Cleartext Password Storage)
+    query = "SELECT id, username, password FROM users"
     c.execute(query)
     users = c.fetchall()
     conn.close()
@@ -293,7 +281,6 @@ def get_user(user_id):
         token_record = c.fetchone()
 
         response = {}
-        # Token Expiration vulnerability remains active - No proper check for expiration in many routes
         if isinstance(token_record, tuple) and token_record[1] == str(token):
             # The token is valid, but we will not explicitly check expiration here for this demo
             # This makes the Token Expiration vulnerability active
@@ -342,8 +329,6 @@ def create_user():
     c = conn.cursor()
     try:
         # SQL Injection vulnerability remains active (Token in query)
-        # Insufficient Authorization is active: removed "AND userid = 10" from token_query.
-        # Any valid token (even non-admin) will be fetched, allowing user creation.
         token_query = "SELECT * FROM tokens WHERE token = '%s'" % (str(token))
         c.execute(token_query)
         token_record = c.fetchone()
@@ -378,9 +363,7 @@ def create_user():
                     conn.commit()
                     response["user"] = {"username": name, "password": password}
             else:
-                response["error"] = {
-                    "message": "username cannot be empty!"
-                }  # More specific error message
+                response["error"] = {"message": "username cannot be empty!"}
         else:
             response["error"] = {"message": "must provide valid token or token expired"}
         return {"response": response}
@@ -394,9 +377,7 @@ def create_user():
 
 @route("/user/<user_id>", method="DELETE")
 def delete_user_by_id(user_id):
-    """
-    Deletes a user by ID. Does NOT require admin token (Insufficient Authorization is active).
-    """
+
     token = request.headers.get("X-Auth-Token")
     if not token:
         return (
@@ -416,7 +397,6 @@ def delete_user_by_id(user_id):
 
         response = {}
         # Insufficient Authorization is active: No admin check here.
-        # Any valid token (even non-admin) will allow user deletion.
         if (
             isinstance(token_record, tuple)
             and token_record[1] == str(token)
@@ -440,14 +420,7 @@ def delete_user_by_id(user_id):
         return json.dumps(response, indent=2)
     finally:
         c.close()
-        conn.close()  # Закрываем соединение
-
-
-# Removed the /uptime endpoint and its associated command injection logic as per user request.
-# @route("/uptime", method="GET")
-# def display_uptime():
-#     # ... (removed content) ...
-#     pass
+        conn.close()
 
 
 @hook("after_request")
@@ -463,10 +436,5 @@ def enable_cors():
     resp.headers["Access-Control-Allow-Headers"] = "*"
 
 
-# Инициализируем БД только один раз при запуске приложения
 init_db()
-
-# Запускаем сервер Bottle
-# debug=True: Уязвимость - Раскрытие информации в режиме отладки (Debug Mode) остается активной
-# reloader=True: Может вызывать проблемы с блокировкой БД при перезагрузке, но полезно для разработки
 run(host="0.0.0.0", port=8081, debug=True, reloader=True)
