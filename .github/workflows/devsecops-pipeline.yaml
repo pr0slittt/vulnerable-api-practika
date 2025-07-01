@@ -46,12 +46,14 @@ jobs:
         with:
           sarif_file: 'semgrep-results.sarif'
           wait-for-processing: true
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: semgrep-sarif-report
           path: semgrep-results.sarif
           retention-days: 5
+
       # НОВЫЙ ШАГ: Run Semgrep SAST Scan (JSON for Table Output)
       - name: Run Semgrep SAST Scan (JSON Output)
         id: semgrep_json_scan
@@ -67,7 +69,7 @@ jobs:
             --verbose || true
           echo "semgrep_json_exit_code=$?" >> "$GITHUB_OUTPUT"
 
-      # НОВЫЙ ШАГ: Upload Semgrep JSON Report Artifact
+      # ЭТОТ ШАГ БЫЛ ДОБАВЛЕН В ПРЕДЫДУЩЕМ ОТВЕТЕ И ОСТАЕТСЯ ЗДЕСЬ
       - name: Upload Semgrep JSON Report Artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -94,6 +96,7 @@ jobs:
           fi
         env:
           PYTHONUNBUFFERED: 1 # Для более предсказуемого вывода в логах
+
       - name: Upload Semgrep Table Report Artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -101,6 +104,7 @@ jobs:
           name: semgrep-table-report
           path: semgrep-table-report.txt
           retention-days: 5
+
   grype-sca:
     runs-on: ubuntu-latest
     steps:
@@ -110,8 +114,10 @@ jobs:
           path: ~/.grype/db
           key: ${{ runner.os }}-grype-db-${{ hashFiles('grype-db-version.txt') }}
           restore-keys: ${{ runner.os }}-grype-db-
+
       - name: Create Grype DB Version File
         run: echo "1" > grype-db-version.txt
+
       - name: Install Grype
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
@@ -126,18 +132,21 @@ jobs:
         with:
           sarif_file: 'grype-results.sarif'
           wait-for-processing: true
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: grype-sarif-report
           path: grype-results.sarif
           retention-days: 5
+
   checkov_iac_scan:
     name: Checkov IaC Scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
       - name: Run Checkov IaC Scan
         id: checkov
         uses: bridgecrewio/checkov-action@v12
@@ -146,6 +155,7 @@ jobs:
           framework: dockerfile,kubernetes,terraform,cloudformation,arm,ansible,serverless
           output_format: sarif
           output_file_path: checkov_results.sarif/results_sarif.sarif
+
       - name: Upload SARIF report
         if: always()
         uses: github/codeql-action/upload-sarif@v3
@@ -154,12 +164,14 @@ jobs:
           category: Checkov
           checkout_path: ${{ github.workspace }}
           wait-for-processing: true
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: checkov-sarif-report
           path: checkov_results.sarif/results_sarif.sarif
           retention-days: 5
+
   docker-build-and-trivy:
     runs-on: ubuntu-latest
     outputs:
@@ -167,6 +179,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+
       - name: Build Docker Image
         id: set-tag
         run: |
@@ -183,6 +196,7 @@ jobs:
           name: trivy-table-report
           path: trivy-table-report.txt
           retention-days: 5
+
       - name: Run Trivy Scan (SARIF Format for Code Scanning)
         uses: aquasecurity/trivy-action@master
         with:
@@ -191,6 +205,7 @@ jobs:
           output: 'trivy-results.sarif'
           severity: 'LOW,MEDIUM,HIGH,CRITICAL'
         continue-on-error: true
+
       - name: Check if Trivy SARIF file exists
         run: |
           if [ ! -f trivy-results.sarif ]; then
@@ -205,23 +220,28 @@ jobs:
           category: Trivy
           checkout_path: ${{ github.workspace }}
           wait-for-processing: true
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: trivy-sarif-report
           path: trivy-results.sarif
           retention-days: 5
+
   zap-dast:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_PAT }}
+
       - name: Create Docker network
         run: docker network create zap-net || true
+
       - name: Run vulnerable-api container
         run: |
           docker run -d --rm --network zap-net --name vulnerable-api \
@@ -240,6 +260,7 @@ jobs:
           done
       - name: Fix permissions for workspace folder
         run: sudo chmod -R a+w ${{ github.workspace }}
+
       - name: Run OWASP ZAP baseline scan manually
         run: |
           docker run --rm --network zap-net -v ${{ github.workspace }}:/zap/wrk/:rw ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
