@@ -42,7 +42,7 @@ jobs:
             --sarif \
             -o "$SARIF_OUTPUT_PATH" \
             ./app \
-            --verbose || true # Использование || true, чтобы пайплайн не падал при найденных уязвимостях
+            --verbose || true
 
       # Запуск Semgrep для JSON (для табличного отчета И для архива)
       - name: Run Semgrep SAST Scan (JSON Output)
@@ -56,7 +56,7 @@ jobs:
             --json \
             -o "$JSON_OUTPUT_PATH" \
             ./app \
-            --verbose || true # Использование || true, чтобы пайплайн не падал при найденных уязвимостях
+            --verbose || true
 
       # Конвертируем Semgrep JSON в табличный формат (для архива)
       - name: Format Semgrep JSON to Table
@@ -97,21 +97,29 @@ jobs:
           if [ -f "$JSON_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $JSON_FILE"; fi
           if [ -f "$TABLE_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $TABLE_FILE"; fi
 
+          # Создаем временный ZIP-файл
+          TEMP_ZIP_NAME="semgrep-reports-temp.zip"
+          FINAL_ZIP_NAME="semgrep-all-reports.zip"
+
           if [ -n "$FILES_TO_ZIP" ]; then
-            zip -j semgrep-reports.zip $FILES_TO_ZIP
-            echo "Created semgrep-reports.zip with the following files:"
-            unzip -l semgrep-reports.zip # Выводит список файлов внутри созданного ZIP для проверки
+            zip -j "$TEMP_ZIP_NAME" $FILES_TO_ZIP
+            echo "Created $TEMP_ZIP_NAME with the following files:"
+            unzip -l "$TEMP_ZIP_NAME" # Выводит список файлов внутри созданного ZIP для проверки
           else
             echo "No Semgrep report files found to archive. Creating an empty zip file."
-            touch semgrep-reports.zip # Создаем пустой ZIP-файл, чтобы upload-artifact не выдал ошибку
+            touch "$TEMP_ZIP_NAME" # Создаем пустой ZIP-файл, чтобы upload-artifact не выдал ошибку
           fi
+
+          # Переименовываем временный ZIP-файл в окончательное имя артефакта
+          mv "$TEMP_ZIP_NAME" "$FINAL_ZIP_NAME"
+
 
       - name: Upload Semgrep Reports ZIP Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: semgrep-all-reports
-          path: semgrep-reports.zip
+          name: semgrep-all-reports # Это имя артефакта
+          path: semgrep-all-reports.zip # Это путь к файлу, который мы загружаем
           retention-days: 5
 
   grype-sca:
@@ -163,21 +171,26 @@ jobs:
           if [ -f "$SARIF_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $SARIF_FILE"; fi
           if [ -f "$TABLE_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $TABLE_FILE"; fi
 
+          TEMP_ZIP_NAME="grype-reports-temp.zip"
+          FINAL_ZIP_NAME="grype-all-reports.zip"
+
           if [ -n "$FILES_TO_ZIP" ]; then
-            zip -j grype-reports.zip $FILES_TO_ZIP
-            echo "Created grype-reports.zip with the following files:"
-            unzip -l grype-reports.zip
+            zip -j "$TEMP_ZIP_NAME" $FILES_TO_ZIP
+            echo "Created $TEMP_ZIP_NAME with the following files:"
+            unzip -l "$TEMP_ZIP_NAME"
           else
             echo "No Grype report files found to archive. Creating an empty zip file."
-            touch grype-reports.zip # Создаем пустой ZIP, чтобы артефакт все равно загрузился
+            touch "$TEMP_ZIP_NAME"
           fi
+
+          mv "$TEMP_ZIP_NAME" "$FINAL_ZIP_NAME"
 
       - name: Upload Grype Reports ZIP Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: grype-all-reports
-          path: grype-reports.zip
+          path: grype-all-reports.zip
           retention-days: 5
 
   checkov_iac_scan:
@@ -195,16 +208,14 @@ jobs:
           framework: dockerfile,kubernetes,terraform,cloudformation,arm,ansible,serverless
           output_format: sarif
           output_file_path: checkov_results.sarif/results_sarif.sarif
-        # continue-on-error: true # Можно добавить, чтобы не прерывать пайплайн при ошибках Checkov
 
       - name: Run Checkov IaC Scan (CLI Output)
         run: |
           CLI_REPORT_PATH="${{ github.workspace }}/checkov-cli-report.txt"
-          # checkov по умолчанию выводит в stdout, перенаправляем в файл
           checkov --directory . \
                   --framework dockerfile,kubernetes,terraform,cloudformation,arm,ansible,serverless \
                   --output cli \
-                  > "$CLI_REPORT_PATH" || true # Добавил || true, чтобы не падать при ошибках
+                  > "$CLI_REPORT_PATH" || true
           cat "$CLI_REPORT_PATH"
 
       - name: Upload Checkov SARIF to Code Scanning
@@ -223,7 +234,6 @@ jobs:
           CLI_FILE="${{ github.workspace }}/checkov-cli-report.txt"
 
           FILES_TO_ZIP=""
-          # Проверяем существование SARIF файла, учитывая возможную подпапку
           if [ -d "${{ github.workspace }}/checkov_results.sarif" ] && [ -f "$SARIF_FILE" ]; then
             FILES_TO_ZIP="$FILES_TO_ZIP $SARIF_FILE"
           else
@@ -236,25 +246,26 @@ jobs:
             echo "CLI file for Checkov not found: $CLI_FILE"
           fi
 
+          TEMP_ZIP_NAME="checkov-reports-temp.zip"
+          FINAL_ZIP_NAME="checkov-all-reports.zip"
+
           if [ -n "$FILES_TO_ZIP" ]; then
-            # Важно: для файлов из подпапок, таких как checkov_results.sarif/results_sarif.sarif,
-            # 'zip -j' поместит их в корень архива.
-            # Если нужно сохранить структуру папок, убрать '-j' и указать базовую директорию,
-            # но тогда имя файла может быть checkov_results.sarif/results_sarif.sarif внутри ZIP.
-            zip -j checkov-reports.zip $FILES_TO_ZIP
-            echo "Created checkov-reports.zip with the following files:"
-            unzip -l checkov-reports.zip
+            zip -j "$TEMP_ZIP_NAME" $FILES_TO_ZIP
+            echo "Created $TEMP_ZIP_NAME with the following files:"
+            unzip -l "$TEMP_ZIP_NAME"
           else
             echo "No Checkov report files found to archive. Creating an empty zip file."
-            touch checkov-reports.zip # Создаем пустой ZIP, чтобы артефакт все равно загрузился
+            touch "$TEMP_ZIP_NAME"
           fi
+
+          mv "$TEMP_ZIP_NAME" "$FINAL_ZIP_NAME"
 
       - name: Upload Checkov Reports ZIP Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: checkov-all-reports
-          path: checkov-reports.zip
+          path: checkov-all-reports.zip
           retention-days: 5
 
   docker-build-and-trivy:
@@ -305,21 +316,26 @@ jobs:
           if [ -f "$SARIF_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $SARIF_FILE"; fi
           if [ -f "$TABLE_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $TABLE_FILE"; fi
 
+          TEMP_ZIP_NAME="trivy-reports-temp.zip"
+          FINAL_ZIP_NAME="trivy-all-reports.zip"
+
           if [ -n "$FILES_TO_ZIP" ]; then
-            zip -j trivy-reports.zip $FILES_TO_ZIP
-            echo "Created trivy-reports.zip with the following files:"
-            unzip -l trivy-reports.zip # Выводит список файлов внутри созданного ZIP для проверки
+            zip -j "$TEMP_ZIP_NAME" $FILES_TO_ZIP
+            echo "Created $TEMP_ZIP_NAME with the following files:"
+            unzip -l "$TEMP_ZIP_NAME" # Выводит список файлов внутри созданного ZIP для проверки
           else
             echo "No Trivy report files found to archive. Creating an empty zip file."
-            touch trivy-reports.zip # Создаем пустой ZIP, чтобы артефакт все равно загрузился
+            touch "$TEMP_ZIP_NAME" # Создаем пустой ZIP, чтобы артефакт все равно загрузился
           fi
+
+          mv "$TEMP_ZIP_NAME" "$FINAL_ZIP_NAME"
 
       - name: Upload Trivy Reports ZIP Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: trivy-all-reports
-          path: trivy-reports.zip
+          path: trivy-all-reports.zip
           retention-days: 5
 
   zap-dast:
