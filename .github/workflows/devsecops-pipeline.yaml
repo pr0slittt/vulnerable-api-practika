@@ -1,4 +1,4 @@
-name: DevSecOps Pipeline 
+name: DevSecOps Pipeline
 
 on:
   push:
@@ -30,12 +30,12 @@ jobs:
           # Этот образ будет доступен для последующих заданий
 
   # Задания, которые вызывают переиспользуемые рабочие процессы
-  # Каждое такое задание должно содержать ТОЛЬКО 'uses', 'with', 'secrets' и 'needs'.
-  # Оно не может иметь своих собственных 'steps'.
+  # Теперь с явным указанием репозитория и основной ветки (main/master)
+  # !!! ОБЯЗАТЕЛЬНО ЗАМЕНИТЕ 'main' на 'master', если ваша основная ветка называется 'master' !!!
 
   semgrep-scan-job:
-    needs: build-docker-image # Это задание зависит от завершения сборки образа
-    uses: ./.github/workflows/reusable/semgrep_scan.yaml # Путь к переиспользуемому рабочему процессу
+    needs: build-docker-image
+    uses: ${{ github.repository }}/.github/workflows/reusable/semgrep_scan.yaml@main # Явная ссылка: репозиторий/путь@основная_ветка
     with:
       repository: ${{ github.repository }}
       sha: ${{ github.sha }}
@@ -45,8 +45,8 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   grype-scan-job:
-    needs: build-docker-image # Это задание зависит от завершения сборки образа
-    uses: ./.github/workflows/reusable/grype_scan.yaml
+    needs: build-docker-image
+    uses: ${{ github.repository }}/.github/workflows/reusable/grype_scan.yaml@main # Явная ссылка: репозиторий/путь@основная_ветка
     with:
       repository: ${{ github.repository }}
       sha: ${{ github.sha }}
@@ -56,8 +56,8 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   checkov-scan-job:
-    needs: build-docker-image # Это задание зависит от завершения сборки образа
-    uses: ./.github/workflows/reusable/checkov_scan.yaml
+    needs: build-docker-image
+    uses: ${{ github.repository }}/.github/workflows/reusable/checkov_scan.yaml@main # Явная ссылка: репозиторий/путь@основная_ветка
     with:
       repository: ${{ github.repository }}
       sha: ${{ github.sha }}
@@ -67,20 +67,20 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   trivy-scan-job:
-    needs: build-docker-image # Trivy нужен собранный образ
-    uses: ./.github/workflows/reusable/trivy_scan.yaml
+    needs: build-docker-image
+    uses: ${{ github.repository }}/.github/workflows/reusable/trivy_scan.yaml@main # Явная ссылка: репозиторий/путь@основная_ветка
     with:
       repository: ${{ github.repository }}
       sha: ${{ github.sha }}
       ref: ${{ github.ref }}
       run_id: ${{ github.run_id }}
-      image_tag: ${{ needs.build-docker-image.outputs.image_tag }} # Передаем тег собранного образа
+      image_tag: ${{ needs.build-docker-image.outputs.image_tag }}
     secrets:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   zap-scan-job:
-    needs: build-docker-image # ZAP нужно запущенное приложение
-    uses: ./.github/workflows/reusable/zap_scan.yaml
+    needs: build-docker-image
+    uses: ${{ github.repository }}/.github/workflows/reusable/zap_scan.yaml@main # Явная ссылка: репозиторий/путь@основная_ветка
     with:
       repository: ${{ github.repository }}
       sha: ${{ github.sha }}
