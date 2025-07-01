@@ -1,30 +1,19 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0 # Используйте последнюю стабильную версию
+    rev: v4.6.0 
     hooks:
       - id: check-yaml
-      # - id: check-json
-      - id: end-of-file-fixer
-      # - id: trim-trailing-whitespace
+      - id: end-of-file-fixer 
       - id: detect-private-key
         name: detect-secret-key  
-      # - id: check-added-large-files
-
-  # НОВЫЕ ХУКИ ДЛЯ PYTHON-КОДА НАЧИНАЮТСЯ ЗДЕСЬ
-  - repo: https://github.com/psf/black
-    rev: 24.4.2 # Используйте последнюю стабильную версию (проверено на 26 июня 2025)
-    hooks:
-      - id: black
-        language_version: python3.12 # Укажите используемую версию Python
+ 
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.18.2 # Убедитесь, что это актуальная версия
+    rev: v8.18.2 
     hooks:
       - id: gitleaks
         name: gitleaks
   - repo: https://github.com/PyCQA/isort
-    rev: 5.13.2 # Используйте последнюю стабильную версию (проверено на 26 июня 2025)
+    rev: 5.13.2 
     hooks:
       - id: isort
-        args: ["--profile", "black"] # Настройка для совместимости с Black       
-
-  # НОВЫЕ ХУКИ ДЛЯ PYTHON-КОДА ЗАКОНЧИЛИСЬ ЗДЕСЬ
+        args: ["--profile", "black"]       
