@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
+      - name: Install dependencies and jq
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -29,8 +29,10 @@ jobs:
         run: |
           pip install "semgrep>=1.76.0"
           semgrep --version
-      - name: Run Semgrep SAST Scan (SARIF for Code Scanning)
-        id: semgrep_sarif_scan_run # Изменил ID, чтобы избежать дублирования, если был такой
+
+      # Запуск Semgrep для SARIF (для GitHub Code Scanning и для архива)
+      - name: Run Semgrep SAST Scan (SARIF Output)
+        id: semgrep_sarif_scan
         run: |
           SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
           semgrep \
@@ -41,22 +43,9 @@ jobs:
             -o "$SARIF_OUTPUT_PATH" \
             ./app \
             --verbose || true
-          echo "semgrep_exit_code=$?" >> "$GITHUB_OUTPUT"
-      - name: Upload Semgrep SARIF to Code Scanning
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'semgrep-results.sarif'
-          wait-for-processing: true
 
-      - name: Upload Semgrep SARIF Report Artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: semgrep-sarif-report
-          path: semgrep-results.sarif
-          retention-days: 5
-
-      - name: Run Semgrep SAST Scan (JSON Output for Table and Artifact)
+      # Запуск Semgrep для JSON (для табличного отчета И для архива)
+      - name: Run Semgrep SAST Scan (JSON Output)
         id: semgrep_json_scan
         run: |
           JSON_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.json"
@@ -68,38 +57,53 @@ jobs:
             -o "$JSON_OUTPUT_PATH" \
             ./app \
             --verbose || true
-          echo "semgrep_json_exit_code=$?" >> "$GITHUB_OUTPUT"
-      - name: Upload Semgrep JSON Report Artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: semgrep-json-report
-          path: semgrep-results.json
-          retention-days: 5
 
-      - name: Format Semgrep JSON to Table and Save to File
+      # Конвертируем Semgrep JSON в табличный формат (для архива)
+      - name: Format Semgrep JSON to Table
         run: |
+          TABLE_REPORT_PATH="${{ github.workspace }}/semgrep-table-report.txt"
           if [ -s "${{ github.workspace }}/semgrep-results.json" ]; then
-            echo "Category | Rule ID | Severity | File | Line | Description" > semgrep-table-report.txt
-            echo "---------|---------|----------|------|------|-------------" >> semgrep-table-report.txt
+            echo "Category | Rule ID | Severity | File | Line | Description" > "$TABLE_REPORT_PATH"
+            echo "---------|---------|----------|------|------|-------------" >> "$TABLE_REPORT_PATH"
             jq -r '.results[] | select(.extra.severity) | "\(.extra.metadata.category // "N/A") | \(.check_id) | \(.extra.severity) | \(.path) | \(.start.line) | \(.extra.message)"' "${{ github.workspace }}/semgrep-results.json" | \
             sed 's/\n/ /g' | \
             sed 's/|/ \| /g' | \
-            column -t -s '|' >> semgrep-table-report.txt
-            cat semgrep-table-report.txt # Выводим в лог
+            column -t -s '|' >> "$TABLE_REPORT_PATH"
+
+            cat "$TABLE_REPORT_PATH" # Выводим в лог
           else
             echo "No Semgrep results found or JSON file is empty."
-            echo "No Semgrep results found." > semgrep-table-report.txt
+            echo "No Semgrep results found." > "$TABLE_REPORT_PATH"
           fi
         env:
           PYTHONUNBUFFERED: 1
 
-      - name: Upload Semgrep Table Report Artifact
+      # Загружаем SARIF в Code Scanning (оставляем этот шаг отдельным, так как он не для артефактов)
+      - name: Upload Semgrep SARIF to Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'semgrep-results.sarif'
+          wait-for-processing: true
+
+      # СОЗДАЕМ ОДИН ZIP-АРХИВ ДЛЯ ВСЕХ ОТЧЕТОВ SEMGREP
+      - name: Archive Semgrep Reports to single ZIP
+        run: |
+          # Убедимся, что все файлы существуют, прежде чем пытаться их запаковать
+          SARIF_FILE="${{ github.workspace }}/semgrep-results.sarif"
+          JSON_FILE="${{ github.workspace }}/semgrep-results.json"
+          TABLE_FILE="${{ github.workspace }}/semgrep-table-report.txt"
+
+          zip -j semgrep-reports.zip $([ -f "$SARIF_FILE" ] && echo "$SARIF_FILE") \
+                                    $([ -f "$JSON_FILE" ] && echo "$JSON_FILE") \
+                                    $([ -f "$TABLE_FILE" ] && echo "$TABLE_FILE")
+          ls -l semgrep-reports.zip # Проверить, что файл создан и его размер
+
+      - name: Upload Semgrep Reports ZIP Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: semgrep-table-report
-          path: semgrep-table-report.txt
+          name: semgrep-all-reports
+          path: semgrep-reports.zip
           retention-days: 5
 
   grype-sca:
@@ -119,24 +123,44 @@ jobs:
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
           grype version
-      - name: Run Grype SCA Scan (SARIF for Code Scanning)
-        id: grype_sarif_scan_run
+
+      # Запуск Grype для SARIF (для GitHub Code Scanning и для архива)
+      - name: Run Grype SCA Scan (SARIF Output)
+        id: grype_sarif_scan
         run: |
-          GRYPE_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
-          grype dir:./app -o sarif --file "$GRYPE_OUTPUT_PATH" || true
-          echo "grype_exit_code=$?" >> "$GITHUB_OUTPUT"
+          SARIF_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
+          grype dir:./app -o sarif --file "$SARIF_OUTPUT_PATH" || true
+
+      # Запуск Grype для табличного отчета (для архива)
+      - name: Run Grype SCA Scan (Table Output)
+        run: |
+          TABLE_REPORT_PATH="${{ github.workspace }}/grype-table-report.txt"
+          grype dir:./app --format table > "$TABLE_REPORT_PATH"
+          cat "$TABLE_REPORT_PATH"
+
+      # Загружаем SARIF в Code Scanning
       - name: Upload Grype SARIF to Code Scanning
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'grype-results.sarif'
           wait-for-processing: true
 
-      - name: Upload Grype SARIF Report Artifact
+      # СОЗДАЕМ ОДИН ZIP-АРХИВ ДЛЯ ВСЕХ ОТЧЕТОВ GRYPE
+      - name: Archive Grype Reports to single ZIP
+        run: |
+          SARIF_FILE="${{ github.workspace }}/grype-results.sarif"
+          TABLE_FILE="${{ github.workspace }}/grype-table-report.txt"
+
+          zip -j grype-reports.zip $([ -f "$SARIF_FILE" ] && echo "$SARIF_FILE") \
+                                    $([ -f "$TABLE_FILE" ] && echo "$TABLE_FILE")
+          ls -l grype-reports.zip # Проверить, что файл создан
+
+      - name: Upload Grype Reports ZIP Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: grype-sarif-report
-          path: grype-results.sarif
+          name: grype-all-reports
+          path: grype-reports.zip
           retention-days: 5
 
   checkov_iac_scan:
@@ -146,14 +170,25 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Run Checkov IaC Scan (SARIF for Code Scanning)
-        id: checkov_sarif_scan_run
+      - name: Run Checkov IaC Scan (SARIF Output)
+        id: checkov_sarif_scan
         uses: bridgecrewio/checkov-action@v12
         with:
           directory: .
           framework: dockerfile,kubernetes,terraform,cloudformation,arm,ansible,serverless
           output_format: sarif
           output_file_path: checkov_results.sarif/results_sarif.sarif
+        # continue-on-error: true # Можно добавить, чтобы не прерывать пайплайн при ошибках Checkov
+
+      - name: Run Checkov IaC Scan (CLI Output)
+        run: |
+          CLI_REPORT_PATH="${{ github.workspace }}/checkov-cli-report.txt"
+          # checkov по умолчанию выводит в stdout, перенаправляем в файл
+          checkov --directory . \
+                  --framework dockerfile,kubernetes,terraform,cloudformation,arm,ansible,serverless \
+                  --output cli \
+                  > "$CLI_REPORT_PATH" || true # Добавил || true, чтобы не падать при ошибках
+          cat "$CLI_REPORT_PATH"
 
       - name: Upload Checkov SARIF to Code Scanning
         if: always()
@@ -164,12 +199,41 @@ jobs:
           checkout_path: ${{ github.workspace }}
           wait-for-processing: true
 
-      - name: Upload Checkov SARIF Report Artifact
+      # СОЗДАЕМ ОДИН ZIP-АРХИВ ДЛЯ ВСЕХ ОТЧЕТОВ CHECKEV (SARIF и CLI)
+      - name: Archive Checkov Reports to single ZIP
+        run: |
+          SARIF_FILE="checkov_results.sarif/results_sarif.sarif"
+          CLI_FILE="${{ github.workspace }}/checkov-cli-report.txt"
+
+          # Проверяем существование папки и файла SARIF
+          if [ -d "checkov_results.sarif" ] && [ -f "$SARIF_FILE" ]; then
+            ZIP_FILES="$SARIF_FILE"
+          else
+            echo "SARIF file for Checkov not found or path is incorrect: $SARIF_FILE"
+            ZIP_FILES=""
+          fi
+
+          if [ -f "$CLI_FILE" ]; then
+            ZIP_FILES="$ZIP_FILES $(echo "$CLI_FILE")"
+          else
+            echo "CLI file for Checkov not found: $CLI_FILE"
+          fi
+
+          if [ -n "$ZIP_FILES" ]; then
+            zip -j checkov-reports.zip $ZIP_FILES
+            ls -l checkov-reports.zip
+          else
+            echo "No Checkov report files found to archive."
+            touch checkov-reports.zip # Создаем пустой ZIP, чтобы артефакт все равно загрузился
+          fi
+
+
+      - name: Upload Checkov Reports ZIP Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: checkov-sarif-report
-          path: checkov_results.sarif/results_sarif.sarif
+          name: checkov-all-reports
+          path: checkov-reports.zip
           retention-days: 5
 
   docker-build-and-trivy:
@@ -185,34 +249,22 @@ jobs:
         run: |
           docker build -t vulnerable-api:latest .
           echo "IMAGE_TAG=vulnerable-api:latest" >> $GITHUB_ENV
-      - name: Run Trivy Scan (Table Format and Save to File)
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo bash -s -- -b /usr/local/bin
-          trivy image --format table ${{ env.IMAGE_TAG }} > trivy-table-report.txt
-          cat trivy-table-report.txt
-      - name: Upload Trivy Table Report Artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-table-report
-          path: trivy-table-report.txt
-          retention-days: 5
 
-      - name: Run Trivy Scan (SARIF Format for Code Scanning)
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: '${{ env.IMAGE_TAG }}'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'LOW,MEDIUM,HIGH,CRITICAL'
-        continue-on-error: true
+      - name: Install Trivy
+        run: curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo bash -s -- -b /usr/local/bin
 
-      - name: Check if Trivy SARIF file exists
+      # Запуск Trivy для SARIF (для GitHub Code Scanning и для архива)
+      - name: Run Trivy Scan (SARIF Output)
+        id: trivy_sarif_scan
         run: |
-          if [ ! -f trivy-results.sarif ]; then
-            echo "ERROR: SARIF file not found!"
-            exit 1
-          fi
+          trivy image --format sarif --output trivy-results.sarif --severity LOW,MEDIUM,HIGH,CRITICAL ${{ env.IMAGE_TAG }} || true
+
+      # Запуск Trivy для табличного отчета (для архива)
+      - name: Run Trivy Scan (Table Output)
+        run: |
+          trivy image --format table --severity LOW,MEDIUM,HIGH,CRITICAL ${{ env.IMAGE_TAG }} > trivy-table-report.txt || true
+
+      # Загружаем SARIF в Code Scanning
       - name: Upload Trivy SARIF to Code Scanning
         if: always()
         uses: github/codeql-action/upload-sarif@v3
@@ -222,11 +274,22 @@ jobs:
           checkout_path: ${{ github.workspace }}
           wait-for-processing: true
 
-      - uses: actions/upload-artifact@v4
+      # СОЗДАЕМ ОДИН ZIP-АРХИВ ДЛЯ ВСЕХ ОТЧЕТОВ TRIVY
+      - name: Archive Trivy Reports to single ZIP
+        run: |
+          SARIF_FILE="${{ github.workspace }}/trivy-results.sarif"
+          TABLE_FILE="${{ github.workspace }}/trivy-table-report.txt"
+
+          zip -j trivy-reports.zip $([ -f "$SARIF_FILE" ] && echo "$SARIF_FILE") \
+                                    $([ -f "$TABLE_FILE" ] && echo "$TABLE_FILE")
+          ls -l trivy-reports.zip # Проверить, что файл создан
+
+      - name: Upload Trivy Reports ZIP Artifact
         if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: trivy-sarif-report
-          path: trivy-results.sarif
+          name: trivy-all-reports
+          path: trivy-reports.zip
           retention-days: 5
 
   zap-dast:
@@ -268,13 +331,4 @@ jobs:
             -t http://vulnerable-api:8081 \
             -r zap-report.html \
             -J zap-report.json \
-            -x zap-report.xml \
-            -I
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: zap-reports
-          path: |
-            zap-report.html
-            zap-report.json
-            zap-report.xml
+            -x
