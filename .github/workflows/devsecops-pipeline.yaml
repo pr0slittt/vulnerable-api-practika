@@ -132,27 +132,35 @@ jobs:
         id: set-tag
         run: |
           docker build -t vulnerable-api:latest .
-          echo "IMAGE_TAG=vulnerable-api:latest" >> $GITHUB_ENV # Сохраняем тег образа для использования в следующих шагах
+          echo "IMAGE_TAG=vulnerable-api:latest" >> $GITHUB_ENV
 
-      - name: Run Trivy Scan (Table Format to Console)
-        # Устанавливаем Trivy или используем его Docker-образ напрямую
+      - name: Run Trivy Scan (Table Format and Save to File)
         run: |
-          # Установка Trivy (альтернатива - использовать aquasec/trivy образ напрямую)
+          # Устанавливаем Trivy
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo bash -s -- -b /usr/local/bin
 
-          # Запуск Trivy с табличным выводом в консоль
-          trivy image --format table ${{ env.IMAGE_TAG }}
-        # continue-on-error: true # Вы можете удалить это, если хотите, чтобы пайплайн падал при любых уязвимостях
+          # Запуск Trivy с табличным выводом и сохранением в файл trivy-table-report.txt
+          trivy image --format table ${{ env.IMAGE_TAG }} > trivy-table-report.txt
+          # Также выведем в консоль, чтобы сразу видеть результат
+          cat trivy-table-report.txt
 
+      - name: Upload Trivy Table Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-table-report
+          path: trivy-table-report.txt
+          retention-days: 5
+
+      # Оставляем этот шаг для загрузки SARIF в Code Scanning
       - name: Run Trivy Scan (SARIF Format for Code Scanning)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ env.IMAGE_TAG }}' # Используем тег из env
+          image-ref: '${{ env.IMAGE_TAG }}'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'LOW,MEDIUM,HIGH,CRITICAL'
-          # убрал ignore-unfixed, чтобы не фильтровались уязвимости без исправления
-        continue-on-error: true # Сохраняем это, чтобы SARIF загружался даже при найденных уязвимостях
+        continue-on-error: true
 
       - name: Check if Trivy SARIF file exists
         run: |
