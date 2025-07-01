@@ -1,4 +1,4 @@
-name: DevSecOps Пайплайн
+name: DevSecOps Pipeline 
 
 on:
   push:
@@ -11,13 +11,14 @@ permissions:
   security-events: write # Требуется для Code Scanning
 
 jobs:
-  # Задание для сборки Docker-образа и передачи тега Trivy
+  # Отдельное задание для сборки Docker-образа
   build-docker-image:
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.set-tag.outputs.image_tag }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: docker/setup-buildx-action@v3
 
       - name: Сборка Docker-образа
@@ -26,10 +27,14 @@ jobs:
           docker build -t vulnerable-api:latest .
           echo "IMAGE_TAG=vulnerable-api:latest" >> $GITHUB_ENV
           echo "image_tag=vulnerable-api:latest" >> $GITHUB_OUTPUT # Установка вывода для других заданий
+          # Этот образ будет доступен для последующих заданий
 
-  # Вызов отдельных переиспользуемых рабочих процессов
+  # Задания, которые вызывают переиспользуемые рабочие процессы
+  # Каждое такое задание должно содержать ТОЛЬКО 'uses', 'with', 'secrets' и 'needs'.
+  # Оно не может иметь своих собственных 'steps'.
+
   semgrep-scan-job:
-    needs: build-docker-image # Гарантируем, что сборка завершится, если это необходимо для последующих шагов, хотя и не напрямую для semgrep
+    needs: build-docker-image # Это задание зависит от завершения сборки образа
     uses: ./.github/workflows/reusable/semgrep_scan.yaml # Путь к переиспользуемому рабочему процессу
     with:
       repository: ${{ github.repository }}
@@ -40,7 +45,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   grype-scan-job:
-    needs: build-docker-image
+    needs: build-docker-image # Это задание зависит от завершения сборки образа
     uses: ./.github/workflows/reusable/grype_scan.yaml
     with:
       repository: ${{ github.repository }}
@@ -51,7 +56,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   checkov-scan-job:
-    needs: build-docker-image
+    needs: build-docker-image # Это задание зависит от завершения сборки образа
     uses: ./.github/workflows/reusable/checkov_scan.yaml
     with:
       repository: ${{ github.repository }}
