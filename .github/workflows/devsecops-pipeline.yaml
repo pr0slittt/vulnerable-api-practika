@@ -8,7 +8,7 @@ on:
 
 permissions:
   contents: read
-  security-events: write
+  security-events: write # Требуется для Code Scanning
 
 jobs:
   semgrep-sast:
@@ -338,14 +338,29 @@ jobs:
       - name: Fix permissions for workspace folder
         run: sudo chmod -R a+w ${{ github.workspace }}
 
-      - name: Run OWASP ZAP baseline scan manually
+      - name: Run OWASP ZAP baseline scan with custom scripts
         run: |
-          docker run --rm --network zap-net -v ${{ github.workspace }}:/zap/wrk/:rw ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
-            -t http://vulnerable-api:8081 \
+          # Создаем временную директорию для монтирования скриптов
+          mkdir -p zap_scripts_to_mount
+
+          # Копируем содержимое нашей папки zap_rules во временную директорию
+          # Предполагается, что папка 'zap_rules' находится в корне вашего репозитория
+          cp -r zap_rules/* zap_scripts_to_mount/
+
+          # Запуск ZAP Docker контейнера с монтированием кастомных скриптов
+          # --network host используется, чтобы ZAP мог напрямую обратиться к localhost:8081
+          # -v "$(pwd)/zap_scripts_to_mount:/zap/scripts:rw"  <-- Вот тут мы монтируем папку со скриптами
+          # -s all                                             <-- Вот тут мы говорим ZAP использовать все найденные скрипты
+          docker run --rm --network host \
+                     -v "$(pwd)/zap_scripts_to_mount:/zap/scripts:rw" \
+                     ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -t http://localhost:8081 \
             -r zap-report.html \
             -J zap-report.json \
             -x zap-report.xml \
-            -I
+            -I \
+            -s all
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
