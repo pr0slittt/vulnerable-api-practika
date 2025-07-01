@@ -16,4 +16,9 @@ repos:
     rev: 5.13.2 
     hooks:
       - id: isort
-        args: ["--profile", "black"]       
+        args: ["--profile", "black"]
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.9 # Используйте актуальную версию
+    hooks:
+      - id: bandit
+        args: ['-r', './app']       
