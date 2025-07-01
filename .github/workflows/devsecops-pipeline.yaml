@@ -1,6 +1,6 @@
-name: DevSecOps Pipeline  
+name:     DevSecOps Pipeline  
 
-on:
+on:    
   push:
     branches: [main, master]
   pull_request:
@@ -16,6 +16,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+
+
+
 
       - uses: actions/setup-python@v5
         with:
@@ -41,6 +45,9 @@ jobs:
       - name: Run Semgrep SAST Scan (SARIF Output)
         id: semgrep_sarif_scan
         run: |
+
+
+
           SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
           semgrep \
             --config "p/python" \
