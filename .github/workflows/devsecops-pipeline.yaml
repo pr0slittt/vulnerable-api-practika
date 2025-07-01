@@ -68,6 +68,15 @@ jobs:
             ./app \
             --verbose || true
           echo "semgrep_json_exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Semgrep JSON Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-json-report
+          path: semgrep-results.json
+          retention-days: 5
+
       # НОВЫЙ ШАГ: Format Semgrep JSON to Table and Save to File
       - name: Format Semgrep JSON to Table
         run: |
@@ -78,7 +87,7 @@ jobs:
             sed 's/\n/ /g' | \
             sed 's/|/ \| /g' | \
             column -t -s '|' >> semgrep-table-report.txt
-            
+
             cat semgrep-table-report.txt # Выводим в лог
           else
             echo "No Semgrep results found or JSON file is empty."
@@ -182,7 +191,6 @@ jobs:
           cat trivy-table-report.txt
       - name: Upload Trivy Table Report Artifact
         if: always()
-        uses: actions/upload-artifact@v4
         with:
           name: trivy-table-report
           path: trivy-table-report.txt
