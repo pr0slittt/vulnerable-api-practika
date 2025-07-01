@@ -32,7 +32,7 @@ jobs:
 
       # Запуск Semgrep для SARIF (для GitHub Code Scanning и для архива)
       - name: Run Semgrep SAST Scan (SARIF Output)
-        id: semgrep_sarif_scan_run # Изменил ID, чтобы избежать дублирования, если был такой
+        id: semgrep_sarif_scan_run
         run: |
           SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
           semgrep \
@@ -43,8 +43,6 @@ jobs:
             -o "$SARIF_OUTPUT_PATH" \
             ./app \
             --verbose || true
-          # Note: The 'echo "semgrep_exit_code=$?" >> "$GITHUB_OUTPUT"' is not strictly needed here
-          # since this is for SARIF upload and not for job outcome, but leaving it as it was.
 
       # Запуск Semgrep для JSON (для табличного отчета И для архива)
       - name: Run Semgrep SAST Scan (JSON Output)
@@ -59,8 +57,6 @@ jobs:
             -o "$JSON_OUTPUT_PATH" \
             ./app \
             --verbose || true
-          # Note: The 'echo "semgrep_json_exit_code=$?" >> "$GITHUB_OUTPUT"' is not strictly needed here
-          # but leaving it as it was.
 
       # Конвертируем Semgrep JSON в табличный формат (для архива)
       - name: Format Semgrep JSON to Table
@@ -82,7 +78,7 @@ jobs:
         env:
           PYTHONUNBUFFERED: 1
 
-      # Загружаем SARIF в Code Scanning (этот шаг остается, так как он не для артефактов)
+      # Загружаем SARIF в Code Scanning (этот шаг остается отдельным, так как он не для артефактов)
       - name: Upload Semgrep SARIF to Code Scanning
         uses: github/codeql-action/upload-sarif@v3
         with:
@@ -92,14 +88,10 @@ jobs:
       # СОЗДАЕМ ОДИН ZIP-АРХИВ ДЛЯ ВСЕХ ОТЧЕТОВ SEMGREP
       - name: Archive Semgrep Reports to single ZIP
         run: |
-          # Убедимся, что все файлы существуют, прежде чем пытаться их запаковать.
-          # Если файла нет, команда `zip` проигнорирует его, но мы хотим, чтобы ZIP был создан,
-          # даже если он пустой или содержит только некоторые файлы.
           SARIF_FILE="${{ github.workspace }}/semgrep-results.sarif"
           JSON_FILE="${{ github.workspace }}/semgrep-results.json"
           TABLE_FILE="${{ github.workspace }}/semgrep-table-report.txt"
-          
-          # Строим список файлов для архивирования, только если они существуют
+
           FILES_TO_ZIP=""
           if [ -f "$SARIF_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $SARIF_FILE"; fi
           if [ -f "$JSON_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $JSON_FILE"; fi
@@ -111,7 +103,6 @@ jobs:
             ls -l semgrep-reports.zip
           else
             echo "No Semgrep report files found to archive. Creating an empty zip file."
-            # Создаем пустой zip файл, чтобы action upload-artifact не выдал ошибку
             zip -j semgrep-reports.zip /dev/null # Используем /dev/null для создания пустого архива
           fi
 
@@ -206,34 +197,22 @@ jobs:
         run: |
           docker build -t vulnerable-api:latest .
           echo "IMAGE_TAG=vulnerable-api:latest" >> $GITHUB_ENV
-      - name: Run Trivy Scan (Table Format and Save to File)
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo bash -s -- -b /usr/local/bin
-          trivy image --format table ${{ env.IMAGE_TAG }} > trivy-table-report.txt
-          cat trivy-table-report.txt
-      - name: Upload Trivy Table Report Artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-table-report
-          path: trivy-table-report.txt
-          retention-days: 5
 
-      - name: Run Trivy Scan (SARIF Format for Code Scanning)
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: '${{ env.IMAGE_TAG }}'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'LOW,MEDIUM,HIGH,CRITICAL'
-        continue-on-error: true
+      - name: Install Trivy
+        run: curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo bash -s -- -b /usr/local/bin
 
-      - name: Check if Trivy SARIF file exists
+      # Запуск Trivy для SARIF (для GitHub Code Scanning и для архива)
+      - name: Run Trivy Scan (SARIF Output)
+        id: trivy_sarif_scan
         run: |
-          if [ ! -f trivy-results.sarif ]; then
-            echo "ERROR: SARIF file not found!"
-            exit 1
-          fi
+          trivy image --format sarif --output trivy-results.sarif --severity LOW,MEDIUM,HIGH,CRITICAL ${{ env.IMAGE_TAG }} || true
+
+      # Запуск Trivy для табличного отчета (для архива)
+      - name: Run Trivy Scan (Table Output)
+        run: |
+          trivy image --format table --severity LOW,MEDIUM,HIGH,CRITICAL ${{ env.IMAGE_TAG }} > trivy-table-report.txt || true
+
+      # Загружаем SARIF в Code Scanning (этот шаг остается отдельным)
       - name: Upload Trivy SARIF to Code Scanning
         if: always()
         uses: github/codeql-action/upload-sarif@v3
@@ -243,11 +222,31 @@ jobs:
           checkout_path: ${{ github.workspace }}
           wait-for-processing: true
 
-      - uses: actions/upload-artifact@v4
+      # СОЗДАЕМ ОДИН ZIP-АРХИВ ДЛЯ ВСЕХ ОТЧЕТОВ TRIVY
+      - name: Archive Trivy Reports to single ZIP
+        run: |
+          SARIF_FILE="${{ github.workspace }}/trivy-results.sarif"
+          TABLE_FILE="${{ github.workspace }}/trivy-table-report.txt"
+
+          FILES_TO_ZIP=""
+          if [ -f "$SARIF_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $SARIF_FILE"; fi
+          if [ -f "$TABLE_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $TABLE_FILE"; fi
+
+          if [ -n "$FILES_TO_ZIP" ]; then
+            zip -j trivy-reports.zip $FILES_TO_ZIP
+            echo "Created trivy-reports.zip with the following files:"
+            ls -l trivy-reports.zip
+          else
+            echo "No Trivy report files found to archive. Creating an empty zip file."
+            zip -j trivy-reports.zip /dev/null # Используем /dev/null для создания пустого архива
+          fi
+
+      - name: Upload Trivy Reports ZIP Artifact
         if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: trivy-sarif-report
-          path: trivy-results.sarif
+          name: trivy-all-reports
+          path: trivy-reports.zip
           retention-days: 5
 
   zap-dast:
