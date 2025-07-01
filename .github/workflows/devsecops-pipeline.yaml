@@ -345,7 +345,7 @@ jobs:
 
           # Копируем содержимое нашей папки zap_rules во временную директорию
           # Предполагается, что папка 'zap_rules' находится в корне вашего репозитория
-          cp -r zap_rules/* zap_scripts_to_mount/
+          cp -r zap-rules/* zap_scripts_to_mount/
 
           # Запуск ZAP Docker контейнера с монтированием кастомных скриптов
           # --network host используется, чтобы ZAP мог напрямую обратиться к localhost:8081
