@@ -1,0 +1,99 @@
+name: Grype SCA Scan (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      repository:
+        required: true
+        type: string
+      sha:
+        required: true
+        type: string
+      ref:
+        required: true
+        type: string
+      run_id:
+        required: true
+        type: string
+    outputs:
+      grype_reports_zip:
+        description: "Path to the Grype reports ZIP artifact"
+        value: ${{ jobs.grype-sca.outputs.grype_reports_zip }}
+    secrets:
+      GITHUB_TOKEN:
+        required: true
+
+jobs:
+  grype-sca:
+    runs-on: ubuntu-latest
+    outputs:
+      grype_reports_zip: grype-all-reports.zip
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/cache@v3
+        with:
+          path: ~/.grype/db
+          key: ${{ runner.os }}-grype-db-${{ hashFiles('grype-db-version.txt') }}
+          restore-keys: ${{ runner.os }}-grype-db-
+
+      - name: Create Grype DB Version File
+        run: echo "1" > grype-db-version.txt
+
+      - name: Install Grype
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
+          grype version
+
+      - name: Run Grype SCA Scan (SARIF Output)
+        id: grype_sarif_scan
+        run: |
+          SARIF_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
+          grype dir:./app -o sarif --file "$SARIF_OUTPUT_PATH" || true
+
+      - name: Run Grype SCA Scan (Table Output)
+        run: |
+          TABLE_REPORT_PATH="${{ github.workspace }}/grype-table-report.txt"
+          grype dir:./app --format table > "$TABLE_REPORT_PATH" || true
+          cat "$TABLE_REPORT_PATH"
+
+      - name: Upload Grype SARIF to Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'grype-results.sarif'
+          wait-for-processing: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Use the passed secret here
+
+      - name: Archive Grype Reports to single ZIP
+        run: |
+          SARIF_FILE="${{ github.workspace }}/grype-results.sarif"
+          TABLE_FILE="${{ github.workspace }}/grype-table-report.txt"
+
+          FILES_TO_ZIP=""
+          if [ -f "$SARIF_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $SARIF_FILE"; fi
+          if [ -f "$TABLE_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $TABLE_FILE"; fi
+
+          TEMP_ZIP_NAME="grype-reports-temp.zip"
+          FINAL_ZIP_NAME="grype-all-reports.zip"
+
+          if [ -n "$FILES_TO_ZIP" ]; then
+            zip -j "$TEMP_ZIP_NAME" $FILES_TO_ZIP
+            echo "Created $TEMP_ZIP_NAME with the following files:"
+            unzip -l "$TEMP_ZIP_NAME"
+          else
+            echo "No Grype report files found to archive. Creating an empty zip file."
+            touch "$TEMP_ZIP_NAME"
+          fi
+          mv "$TEMP_ZIP_NAME" "$FINAL_ZIP_NAME"
+
+      - name: Upload Grype Reports ZIP Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grype-all-reports
+          path: grype-all-reports.zip
+          retention-days: 5

@@ -1,0 +1,133 @@
+name: Semgrep SAST Scan (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      repository:
+        required: true
+        type: string
+      sha:
+        required: true
+        type: string
+      ref:
+        required: true
+        type: string
+      run_id:
+        required: true
+        type: string
+    outputs:
+      semgrep_reports_zip:
+        description: "Path to the Semgrep reports ZIP artifact"
+        value: ${{ jobs.semgrep-sast.outputs.semgrep_reports_zip }}
+    secrets:
+      GITHUB_TOKEN:
+        required: true
+
+jobs:
+  semgrep-sast:
+    runs-on: ubuntu-latest
+    outputs:
+      semgrep_reports_zip: semgrep-all-reports.zip
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies and jq
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          sudo apt-get update && sudo apt-get install -y jq
+      - name: Install Semgrep CLI
+        run: |
+          pip install "semgrep>=1.76.0"
+          semgrep --version
+
+      - name: Run Semgrep SAST Scan (SARIF Output)
+        id: semgrep_sarif_scan
+        run: |
+          SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
+          semgrep \
+            --config "p/python" \
+            --config "p/security-audit" \
+            --config "semgrep-rules/" \
+            --sarif \
+            -o "$SARIF_OUTPUT_PATH" \
+            ./app \
+            --verbose || true
+
+      - name: Run Semgrep SAST Scan (JSON Output)
+        id: semgrep_json_scan
+        run: |
+          JSON_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.json"
+          semgrep \
+            --config "p/python" \
+            --config "p/security-audit" \
+            --config "semgrep-rules/" \
+            --json \
+            -o "$JSON_OUTPUT_PATH" \
+            ./app \
+            --verbose || true
+
+      - name: Format Semgrep JSON to Table
+        run: |
+          TABLE_REPORT_PATH="${{ github.workspace }}/semgrep-table-report.txt"
+          if [ -s "${{ github.workspace }}/semgrep-results.json" ]; then
+            echo "Category | Rule ID | Severity | File | Line | Description" > "$TABLE_REPORT_PATH"
+            echo "---------|---------|----------|------|------|-------------" >> "$TABLE_REPORT_PATH"
+            jq -r '.results[] | select(.extra.severity) | "\(.extra.metadata.category // "N/A") | \(.check_id) | \(.extra.severity) | \(.path) | \(.start.line) | \(.extra.message)"' "${{ github.workspace }}/semgrep-results.json" | \
+            sed 's/\n/ /g' | \
+            sed 's/|/ \| /g' | \
+            column -t -s '|' >> "$TABLE_REPORT_PATH"
+            cat "$TABLE_REPORT_PATH"
+          else
+            echo "No Semgrep results found or JSON file is empty. Creating empty table report."
+            echo "No Semgrep results found." > "$TABLE_REPORT_PATH"
+          fi
+        env:
+          PYTHONUNBUFFERED: 1
+
+      - name: Upload Semgrep SARIF to Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'semgrep-results.sarif'
+          wait-for-processing: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Use the passed secret here
+
+      - name: Archive Semgrep Reports to single ZIP
+        run: |
+          SARIF_FILE="${{ github.workspace }}/semgrep-results.sarif"
+          JSON_FILE="${{ github.workspace }}/semgrep-results.json"
+          TABLE_FILE="${{ github.workspace }}/semgrep-table-report.txt"
+
+          FILES_TO_ZIP=""
+          if [ -f "$SARIF_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $SARIF_FILE"; fi
+          if [ -f "$JSON_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $JSON_FILE"; fi
+          if [ -f "$TABLE_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $TABLE_FILE"; fi
+
+          TEMP_ZIP_NAME="semgrep-reports-temp.zip"
+          FINAL_ZIP_NAME="semgrep-all-reports.zip"
+
+          if [ -n "$FILES_TO_ZIP" ]; then
+            zip -j "$TEMP_ZIP_NAME" $FILES_TO_ZIP
+            echo "Created $TEMP_ZIP_NAME with the following files:"
+            unzip -l "$TEMP_ZIP_NAME"
+          else
+            echo "No Semgrep report files found to archive. Creating an empty zip file."
+            touch "$TEMP_ZIP_NAME"
+          fi
+          mv "$TEMP_ZIP_NAME" "$FINAL_ZIP_NAME"
+
+      - name: Upload Semgrep Reports ZIP Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-all-reports
+          path: semgrep-all-reports.zip
+          retention-days: 5

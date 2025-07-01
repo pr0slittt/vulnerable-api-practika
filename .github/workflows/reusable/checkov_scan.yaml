@@ -1,0 +1,105 @@
+name: Checkov IaC Scan (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      repository:
+        required: true
+        type: string
+      sha:
+        required: true
+        type: string
+      ref:
+        required: true
+        type: string
+      run_id:
+        required: true
+        type: string
+    outputs:
+      checkov_reports_zip:
+        description: "Path to the Checkov reports ZIP artifact"
+        value: ${{ jobs.checkov_iac_scan.outputs.checkov_reports_zip }}
+    secrets:
+      GITHUB_TOKEN:
+        required: true
+
+jobs:
+  checkov_iac_scan:
+    name: Checkov IaC Scan
+    runs-on: ubuntu-latest
+    outputs:
+      checkov_reports_zip: checkov-all-reports.zip
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.ref }}
+
+      - name: Run Checkov IaC Scan (SARIF Output)
+        id: checkov_sarif_scan
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: dockerfile,kubernetes,terraform,cloudformation,arm,ansible,serverless
+          output_format: sarif
+          output_file_path: checkov_results.sarif/results_sarif.sarif
+
+      - name: Run Checkov IaC Scan (CLI Output)
+        run: |
+          CLI_REPORT_PATH="${{ github.workspace }}/checkov-cli-report.txt"
+          checkov --directory . \
+                  --framework dockerfile,kubernetes,terraform,cloudformation,arm,ansible,serverless \
+                  --output cli \
+                  > "$CLI_REPORT_PATH" || true
+          cat "$CLI_REPORT_PATH"
+
+      - name: Upload Checkov SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov_results.sarif/results_sarif.sarif
+          category: Checkov
+          checkout_path: ${{ github.workspace }}
+          wait-for-processing: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Use the passed secret here
+
+      - name: Archive Checkov Reports to single ZIP
+        run: |
+          SARIF_FILE="${{ github.workspace }}/checkov_results.sarif/results_sarif.sarif"
+          CLI_FILE="${{ github.workspace }}/checkov-cli-report.txt"
+
+          FILES_TO_ZIP=""
+          if [ -d "${{ github.workspace }}/checkov_results.sarif" ] && [ -f "$SARIF_FILE" ]; then
+            FILES_TO_ZIP="$FILES_TO_ZIP $SARIF_FILE"
+          else
+            echo "SARIF file for Checkov not found or path is incorrect: $SARIF_FILE"
+          fi
+
+          if [ -f "$CLI_FILE" ]; then
+            FILES_TO_ZIP="$FILES_TO_ZIP $CLI_FILE"
+          else
+            echo "CLI file for Checkov not found: $CLI_FILE"
+          fi
+
+          TEMP_ZIP_NAME="checkov-reports-temp.zip"
+          FINAL_ZIP_NAME="checkov-all-reports.zip"
+
+          if [ -n "$FILES_TO_ZIP" ]; then
+            zip -j "$TEMP_ZIP_NAME" $FILES_TO_ZIP
+            echo "Created $TEMP_ZIP_NAME with the following files:"
+            unzip -l "$TEMP_ZIP_NAME"
+          else
+            echo "No Checkov report files found to archive. Creating an empty zip file."
+            touch "$TEMP_ZIP_NAME"
+          fi
+          mv "$TEMP_ZIP_NAME" "$FINAL_ZIP_NAME"
+
+      - name: Upload Checkov Reports ZIP Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkov-all-reports
+          path: checkov-all-reports.zip
+          retention-days: 5
