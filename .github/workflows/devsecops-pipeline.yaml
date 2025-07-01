@@ -343,15 +343,13 @@ jobs:
           # Создаем временную директорию для монтирования скриптов
           mkdir -p zap_scripts_to_mount
 
-          # Копируем содержимое нашей папки zap_rules во временную директорию
-          # Предполагается, что папка 'zap_rules' находится в корне вашего репозитория
-          cp -r zap-rules/* zap_scripts_to_mount/
+          # Копируем содержимое нашей папки zap-rules во временную директорию
+          cp -r zap-rules/* zap_scripts_to_mount/ 
 
           # Запуск ZAP Docker контейнера с монтированием кастомных скриптов
-          # --network host используется, чтобы ZAP мог напрямую обратиться к localhost:8081
-          # -v "$(pwd)/zap_scripts_to_mount:/zap/scripts:rw"  <-- Вот тут мы монтируем папку со скриптами
-          # -s all                                             <-- Вот тут мы говорим ZAP использовать все найденные скрипты
+          # Теперь монтируем обе директории: /zap/wrk для отчетов и /zap/scripts для кастомных скриптов
           docker run --rm --network host \
+                     -v "${{ github.workspace }}:/zap/wrk/:rw" \
                      -v "$(pwd)/zap_scripts_to_mount:/zap/scripts:rw" \
                      ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
             -t http://localhost:8081 \
