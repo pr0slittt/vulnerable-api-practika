@@ -8,7 +8,7 @@ on:
 
 permissions:
   contents: read
-  security-events: write # Эту пермиссию ОСТАВЛЯЕМ, так как SARIF загружается в Code Scanning
+  security-events: write
 
 jobs:
   semgrep-sast:
@@ -50,7 +50,7 @@ jobs:
           sarif_file: 'semgrep-results.sarif'
           wait-for-processing: true
 
-      # Запуск Semgrep для JSON (для табличного отчета)
+      # Запуск Semgrep для JSON (для табличного отчета И для сохранения в артефактах)
       - name: Run Semgrep SAST Scan (JSON Output)
         id: semgrep_json_scan
         run: |
@@ -64,6 +64,15 @@ jobs:
             ./app \
             --verbose || true
           echo "semgrep_json_exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      # НОВЫЙ ШАГ: Upload Semgrep JSON Report Artifact
+      - name: Upload Semgrep JSON Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-json-report
+          path: semgrep-results.json
+          retention-days: 5
 
       # Конвертируем Semgrep JSON в табличный формат и сохраняем
       - name: Format Semgrep JSON to Table and Save to File
@@ -92,14 +101,6 @@ jobs:
           name: semgrep-table-report
           path: semgrep-table-report.txt
           retention-days: 5
-
-      # УДАЛЕНО: сохранение SARIF-отчета как артефакта
-      # - uses: actions/upload-artifact@v4
-      #   if: always()
-      #   with:
-      #     name: semgrep-sarif-report
-      #     path: semgrep-results.sarif
-      #     retention-days: 5
 
   grype-sca:
     runs-on: ubuntu-latest
@@ -146,14 +147,6 @@ jobs:
           path: grype-table-report.txt
           retention-days: 5
 
-      # УДАЛЕНО: сохранение SARIF-отчета как артефакта
-      # - uses: actions/upload-artifact@v4
-      #   if: always()
-      #   with:
-      #     name: grype-sarif-report
-      #     path: grype-results.sarif
-      #     retention-days: 5
-
   checkov_iac_scan:
     name: Checkov IaC Scan
     runs-on: ubuntu-latest
@@ -198,14 +191,6 @@ jobs:
           path: checkov-cli-report.txt
           retention-days: 5
 
-      # УДАЛЕНО: сохранение SARIF-отчета как артефакта
-      # - uses: actions/upload-artifact@v4
-      #   if: always()
-      #   with:
-      #     name: checkov-sarif-report
-      #     path: checkov_results.sarif/results_sarif.sarif
-      #     retention-days: 5
-
   docker-build-and-trivy:
     runs-on: ubuntu-latest
     outputs:
@@ -228,11 +213,7 @@ jobs:
       - name: Run Trivy Scan (SARIF for Code Scanning)
         id: trivy_sarif_scan
         run: |
-          # Используем Trivy CLI напрямую для SARIF, чтобы иметь больше контроля
-          # чем с aquasecurity/trivy-action, особенно если не хотим сохранять SARIF-файл как артефакт.
-          # aquasecurity/trivy-action удобен, но здесь мы хотим тонкий контроль.
           trivy image --format sarif --output trivy-results.sarif --severity LOW,MEDIUM,HIGH,CRITICAL ${{ env.IMAGE_TAG }} || true
-          # || true добавлен, чтобы шаг не падал, если Trivy найдет уязвимости (так как это SARIF для отчета)
 
       - name: Upload Trivy SARIF report
         if: always()
@@ -256,14 +237,6 @@ jobs:
           name: trivy-table-report
           path: trivy-table-report.txt
           retention-days: 5
-
-      # УДАЛЕНО: сохранение SARIF-отчета как артефакта
-      # - uses: actions/upload-artifact@v4
-      #   if: always()
-      #   with:
-      #     name: trivy-sarif-report
-      #     path: trivy-results.sarif
-      #     retention-days: 5
 
   zap-dast:
     runs-on: ubuntu-latest
