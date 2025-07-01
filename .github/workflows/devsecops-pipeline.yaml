@@ -132,15 +132,27 @@ jobs:
         id: set-tag
         run: |
           docker build -t vulnerable-api:latest .
+          echo "IMAGE_TAG=vulnerable-api:latest" >> $GITHUB_ENV # Сохраняем тег образа для использования в следующих шагах
 
-      - uses: aquasecurity/trivy-action@master
+      - name: Run Trivy Scan (Table Format to Console)
+        # Устанавливаем Trivy или используем его Docker-образ напрямую
+        run: |
+          # Установка Trivy (альтернатива - использовать aquasec/trivy образ напрямую)
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo bash -s -- -b /usr/local/bin
+
+          # Запуск Trivy с табличным выводом в консоль
+          trivy image --format table ${{ env.IMAGE_TAG }}
+        # continue-on-error: true # Вы можете удалить это, если хотите, чтобы пайплайн падал при любых уязвимостях
+
+      - name: Run Trivy Scan (SARIF Format for Code Scanning)
+        uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'vulnerable-api:latest'
+          image-ref: '${{ env.IMAGE_TAG }}' # Используем тег из env
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'LOW,MEDIUM,HIGH,CRITICAL'
           # убрал ignore-unfixed, чтобы не фильтровались уязвимости без исправления
-        continue-on-error: true
+        continue-on-error: true # Сохраняем это, чтобы SARIF загружался даже при найденных уязвимостях
 
       - name: Check if Trivy SARIF file exists
         run: |
