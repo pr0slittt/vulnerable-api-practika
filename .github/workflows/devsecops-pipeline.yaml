@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
+      - name: Install dependencies and jq
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -32,7 +32,7 @@ jobs:
 
       # Запуск Semgrep для SARIF (для GitHub Code Scanning и для архива)
       - name: Run Semgrep SAST Scan (SARIF Output)
-        id: semgrep_sarif_scan_run
+        id: semgrep_sarif_scan
         run: |
           SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
           semgrep \
@@ -42,7 +42,7 @@ jobs:
             --sarif \
             -o "$SARIF_OUTPUT_PATH" \
             ./app \
-            --verbose || true
+            --verbose || true # Использование || true, чтобы пайплайн не падал при найденных уязвимостях
 
       # Запуск Semgrep для JSON (для табличного отчета И для архива)
       - name: Run Semgrep SAST Scan (JSON Output)
@@ -56,7 +56,7 @@ jobs:
             --json \
             -o "$JSON_OUTPUT_PATH" \
             ./app \
-            --verbose || true
+            --verbose || true # Использование || true, чтобы пайплайн не падал при найденных уязвимостях
 
       # Конвертируем Semgrep JSON в табличный формат (для архива)
       - name: Format Semgrep JSON to Table
@@ -100,10 +100,10 @@ jobs:
           if [ -n "$FILES_TO_ZIP" ]; then
             zip -j semgrep-reports.zip $FILES_TO_ZIP
             echo "Created semgrep-reports.zip with the following files:"
-            ls -l semgrep-reports.zip
+            unzip -l semgrep-reports.zip # Выводит список файлов внутри созданного ZIP для проверки
           else
             echo "No Semgrep report files found to archive. Creating an empty zip file."
-            zip -j semgrep-reports.zip /dev/null # Используем /dev/null для создания пустого архива
+            touch semgrep-reports.zip # Создаем пустой ZIP-файл, чтобы upload-artifact не выдал ошибку
           fi
 
       - name: Upload Semgrep Reports ZIP Artifact
@@ -131,24 +131,53 @@ jobs:
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
           grype version
-      - name: Run Grype SCA Scan (SARIF for Code Scanning)
-        id: grype_sarif_scan_run
+
+      # Запуск Grype для SARIF (для GitHub Code Scanning и для архива)
+      - name: Run Grype SCA Scan (SARIF Output)
+        id: grype_sarif_scan
         run: |
-          GRYPE_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
-          grype dir:./app -o sarif --file "$GRYPE_OUTPUT_PATH" || true
-          echo "grype_exit_code=$?" >> "$GITHUB_OUTPUT"
+          SARIF_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
+          grype dir:./app -o sarif --file "$SARIF_OUTPUT_PATH" || true
+
+      # Запуск Grype для табличного отчета (для архива)
+      - name: Run Grype SCA Scan (Table Output)
+        run: |
+          TABLE_REPORT_PATH="${{ github.workspace }}/grype-table-report.txt"
+          grype dir:./app --format table > "$TABLE_REPORT_PATH" || true
+          cat "$TABLE_REPORT_PATH"
+
+      # Загружаем SARIF в Code Scanning
       - name: Upload Grype SARIF to Code Scanning
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'grype-results.sarif'
           wait-for-processing: true
 
-      - name: Upload Grype SARIF Report Artifact
+      # СОЗДАЕМ ОДИН ZIP-АРХИВ ДЛЯ ВСЕХ ОТЧЕТОВ GRYPE
+      - name: Archive Grype Reports to single ZIP
+        run: |
+          SARIF_FILE="${{ github.workspace }}/grype-results.sarif"
+          TABLE_FILE="${{ github.workspace }}/grype-table-report.txt"
+
+          FILES_TO_ZIP=""
+          if [ -f "$SARIF_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $SARIF_FILE"; fi
+          if [ -f "$TABLE_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $TABLE_FILE"; fi
+
+          if [ -n "$FILES_TO_ZIP" ]; then
+            zip -j grype-reports.zip $FILES_TO_ZIP
+            echo "Created grype-reports.zip with the following files:"
+            unzip -l grype-reports.zip
+          else
+            echo "No Grype report files found to archive. Creating an empty zip file."
+            touch grype-reports.zip # Создаем пустой ZIP, чтобы артефакт все равно загрузился
+          fi
+
+      - name: Upload Grype Reports ZIP Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: grype-sarif-report
-          path: grype-results.sarif
+          name: grype-all-reports
+          path: grype-reports.zip
           retention-days: 5
 
   checkov_iac_scan:
@@ -158,14 +187,25 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Run Checkov IaC Scan (SARIF for Code Scanning)
-        id: checkov_sarif_scan_run
+      - name: Run Checkov IaC Scan (SARIF Output)
+        id: checkov_sarif_scan
         uses: bridgecrewio/checkov-action@v12
         with:
           directory: .
           framework: dockerfile,kubernetes,terraform,cloudformation,arm,ansible,serverless
           output_format: sarif
           output_file_path: checkov_results.sarif/results_sarif.sarif
+        # continue-on-error: true # Можно добавить, чтобы не прерывать пайплайн при ошибках Checkov
+
+      - name: Run Checkov IaC Scan (CLI Output)
+        run: |
+          CLI_REPORT_PATH="${{ github.workspace }}/checkov-cli-report.txt"
+          # checkov по умолчанию выводит в stdout, перенаправляем в файл
+          checkov --directory . \
+                  --framework dockerfile,kubernetes,terraform,cloudformation,arm,ansible,serverless \
+                  --output cli \
+                  > "$CLI_REPORT_PATH" || true # Добавил || true, чтобы не падать при ошибках
+          cat "$CLI_REPORT_PATH"
 
       - name: Upload Checkov SARIF to Code Scanning
         if: always()
@@ -176,12 +216,45 @@ jobs:
           checkout_path: ${{ github.workspace }}
           wait-for-processing: true
 
-      - name: Upload Checkov SARIF Report Artifact
+      # СОЗДАЕМ ОДИН ZIP-АРХИВ ДЛЯ ВСЕХ ОТЧЕТОВ CHECKEV (SARIF и CLI)
+      - name: Archive Checkov Reports to single ZIP
+        run: |
+          SARIF_FILE="${{ github.workspace }}/checkov_results.sarif/results_sarif.sarif"
+          CLI_FILE="${{ github.workspace }}/checkov-cli-report.txt"
+
+          FILES_TO_ZIP=""
+          # Проверяем существование SARIF файла, учитывая возможную подпапку
+          if [ -d "${{ github.workspace }}/checkov_results.sarif" ] && [ -f "$SARIF_FILE" ]; then
+            FILES_TO_ZIP="$FILES_TO_ZIP $SARIF_FILE"
+          else
+            echo "SARIF file for Checkov not found or path is incorrect: $SARIF_FILE"
+          fi
+
+          if [ -f "$CLI_FILE" ]; then
+            FILES_TO_ZIP="$FILES_TO_ZIP $CLI_FILE"
+          else
+            echo "CLI file for Checkov not found: $CLI_FILE"
+          fi
+
+          if [ -n "$FILES_TO_ZIP" ]; then
+            # Важно: для файлов из подпапок, таких как checkov_results.sarif/results_sarif.sarif,
+            # 'zip -j' поместит их в корень архива.
+            # Если нужно сохранить структуру папок, убрать '-j' и указать базовую директорию,
+            # но тогда имя файла может быть checkov_results.sarif/results_sarif.sarif внутри ZIP.
+            zip -j checkov-reports.zip $FILES_TO_ZIP
+            echo "Created checkov-reports.zip with the following files:"
+            unzip -l checkov-reports.zip
+          else
+            echo "No Checkov report files found to archive. Creating an empty zip file."
+            touch checkov-reports.zip # Создаем пустой ZIP, чтобы артефакт все равно загрузился
+          fi
+
+      - name: Upload Checkov Reports ZIP Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: checkov-sarif-report
-          path: checkov_results.sarif/results_sarif.sarif
+          name: checkov-all-reports
+          path: checkov-reports.zip
           retention-days: 5
 
   docker-build-and-trivy:
@@ -235,10 +308,10 @@ jobs:
           if [ -n "$FILES_TO_ZIP" ]; then
             zip -j trivy-reports.zip $FILES_TO_ZIP
             echo "Created trivy-reports.zip with the following files:"
-            ls -l trivy-reports.zip
+            unzip -l trivy-reports.zip # Выводит список файлов внутри созданного ZIP для проверки
           else
             echo "No Trivy report files found to archive. Creating an empty zip file."
-            zip -j trivy-reports.zip /dev/null # Используем /dev/null для создания пустого архива
+            touch trivy-reports.zip # Создаем пустой ZIP, чтобы артефакт все равно загрузился
           fi
 
       - name: Upload Trivy Reports ZIP Artifact
