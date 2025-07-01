@@ -24,12 +24,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          sudo apt-get update && sudo apt-get install -y jq # Устанавливаем jq
+          sudo apt-get update && sudo apt-get install -y jq
       - name: Install Semgrep CLI
         run: |
           pip install "semgrep>=1.76.0"
           semgrep --version
-      # Запуск Semgrep для SARIF (для GitHub Code Scanning и для архива)
       - name: Run Semgrep SAST Scan (SARIF Output)
         id: semgrep_sarif_scan
         run: |
@@ -42,7 +41,6 @@ jobs:
             -o "$SARIF_OUTPUT_PATH" \
             ./app \
             --verbose || true
-      # Запуск Semgrep для JSON (для табличного отчета И для архива)
       - name: Run Semgrep SAST Scan (JSON Output)
         id: semgrep_json_scan
         run: |
@@ -55,7 +53,6 @@ jobs:
             -o "$JSON_OUTPUT_PATH" \
             ./app \
             --verbose || true
-      # Конвертируем Semgrep JSON в табличный формат (для архива)
       - name: Format Semgrep JSON to Table
         run: |
           TABLE_REPORT_PATH="${{ github.workspace }}/semgrep-table-report.txt"
@@ -66,7 +63,7 @@ jobs:
             sed 's/\n/ /g' | \
             sed 's/|/ \| /g' | \
             column -t -s '|' >> "$TABLE_REPORT_PATH"
-            cat "$TABLE_REPORT_PATH" # Выводим в лог
+            cat "$TABLE_REPORT_PATH"
           else
             echo "No Semgrep results found or JSON file is empty. Creating empty table report."
             echo "No Semgrep results found." > "$TABLE_REPORT_PATH"
@@ -74,14 +71,12 @@ jobs:
         env:
           PYTHONUNBUFFERED: 1
 
-      # Загружаем SARIF в Code Scanning (этот шаг остается отдельным, так как он не для артефактов)
       - name: Upload Semgrep SARIF to Code Scanning
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'semgrep-results.sarif'
           wait-for-processing: true
 
-      # СОЗДАЕМ ОДИН ZIP-АРХИВ ДЛЯ ВСЕХ ОТЧЕТОВ SEMGREP
       - name: Archive Semgrep Reports to single ZIP
         run: |
           SARIF_FILE="${{ github.workspace }}/semgrep-results.sarif"
@@ -91,25 +86,23 @@ jobs:
           if [ -f "$SARIF_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $SARIF_FILE"; fi
           if [ -f "$JSON_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $JSON_FILE"; fi
           if [ -f "$TABLE_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $TABLE_FILE"; fi
-          # Создаем временный ZIP-файл
           TEMP_ZIP_NAME="semgrep-reports-temp.zip"
           FINAL_ZIP_NAME="semgrep-all-reports.zip"
           if [ -n "$FILES_TO_ZIP" ]; then
             zip -j "$TEMP_ZIP_NAME" $FILES_TO_ZIP
             echo "Created $TEMP_ZIP_NAME with the following files:"
-            unzip -l "$TEMP_ZIP_NAME" # Выводит список файлов внутри созданного ZIP для проверки
+            unzip -l "$TEMP_ZIP_NAME"
           else
             echo "No Semgrep report files found to archive. Creating an empty zip file."
-            touch "$TEMP_ZIP_NAME" # Создаем пустой ZIP-файл, чтобы upload-artifact не выдал ошибку
+            touch "$TEMP_ZIP_NAME"
           fi
-          # Переименовываем временный ZIP-файл в окончательное имя артефакта
           mv "$TEMP_ZIP_NAME" "$FINAL_ZIP_NAME"
       - name: Upload Semgrep Reports ZIP Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: semgrep-all-reports # Это имя артефакта
-          path: semgrep-all-reports.zip # Это путь к файлу, который мы загружаем
+          name: semgrep-all-reports
+          path: semgrep-all-reports.zip
           retention-days: 5
 
   grype-sca:
@@ -129,26 +122,22 @@ jobs:
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
           grype version
-      # Запуск Grype для SARIF (для GitHub Code Scanning и для архива)
       - name: Run Grype SCA Scan (SARIF Output)
         id: grype_sarif_scan
         run: |
           SARIF_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
           grype dir:./app -o sarif --file "$SARIF_OUTPUT_PATH" || true
-      # Запуск Grype для табличного отчета (для архива)
       - name: Run Grype SCA Scan (Table Output)
         run: |
           TABLE_REPORT_PATH="${{ github.workspace }}/grype-table-report.txt"
           grype dir:./app --format table > "$TABLE_REPORT_PATH" || true
           cat "$TABLE_REPORT_PATH"
-      # Загружаем SARIF в Code Scanning
       - name: Upload Grype SARIF to Code Scanning
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'grype-results.sarif'
           wait-for-processing: true
 
-      # СОЗДАЕМ ОДИН ZIP-АРХИВ ДЛЯ ВСЕХ ОТЧЕТОВ GRYPE
       - name: Archive Grype Reports to single ZIP
         run: |
           SARIF_FILE="${{ github.workspace }}/grype-results.sarif"
@@ -208,7 +197,6 @@ jobs:
           checkout_path: ${{ github.workspace }}
           wait-for-processing: true
 
-      # СОЗДАЕМ ОДИН ZIP-АРХИВ ДЛЯ ВСЕХ ОТЧЕТОВ CHECKEV (SARIF и CLI)
       - name: Archive Checkov Reports to single ZIP
         run: |
           SARIF_FILE="${{ github.workspace }}/checkov_results.sarif/results_sarif.sarif"
@@ -243,124 +231,75 @@ jobs:
           path: checkov-all-reports.zip
           retention-days: 5
 
-  docker-build-and-trivy:
-    runs-on: ubuntu-latest
-    outputs:
-      image_tag: ${{ steps.set-tag.outputs.image_tag }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker Image
-        id: set-tag
-        run: |
-          docker build -t vulnerable-api:latest .
-          echo "IMAGE_TAG=vulnerable-api:latest" >> $GITHUB_ENV
-      - name: Install Trivy
-        run: curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo bash -s -- -b /usr/local/bin
-
-      # Запуск Trivy для SARIF (для GitHub Code Scanning и для архива)
-      - name: Run Trivy Scan (SARIF Output)
-        id: trivy_sarif_scan
-        run: |
-          trivy image --format sarif --output trivy-results.sarif --severity LOW,MEDIUM,HIGH,CRITICAL ${{ env.IMAGE_TAG }} || true
-      # Запуск Trivy для табличного отчета (для архива)
-      - name: Run Trivy Scan (Table Output)
-        run: |
-          trivy image --format table --severity LOW,MEDIUM,HIGH,CRITICAL ${{ env.IMAGE_TAG }} > trivy-table-report.txt || true
-      # Загружаем SARIF в Code Scanning (этот шаг остается отдельным)
-      - name: Upload Trivy SARIF to Code Scanning
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-results.sarif'
-          category: Trivy
-          checkout_path: ${{ github.workspace }}
-          wait-for-processing: true
-
-      # СОЗДАЕМ ОДИН ZIP-АРХИВ ДЛЯ ВСЕХ ОТЧЕТОВ TRIVY
-      - name: Archive Trivy Reports to single ZIP
-        run: |
-          SARIF_FILE="${{ github.workspace }}/trivy-results.sarif"
-          TABLE_FILE="${{ github.workspace }}/trivy-table-report.txt"
-          FILES_TO_ZIP=""
-          if [ -f "$SARIF_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $SARIF_FILE"; fi
-          if [ -f "$TABLE_FILE" ]; then FILES_TO_ZIP="$FILES_TO_ZIP $TABLE_FILE"; fi
-          TEMP_ZIP_NAME="trivy-reports-temp.zip"
-          FINAL_ZIP_NAME="trivy-all-reports.zip"
-          if [ -n "$FILES_TO_ZIP" ]; then
-            zip -j "$TEMP_ZIP_NAME" $FILES_TO_ZIP
-            echo "Created $TEMP_ZIP_NAME with the following files:"
-            unzip -l "$TEMP_ZIP_NAME" # Выводит список файлов внутри созданного ZIP для проверки
-          else
-            echo "No Trivy report files found to archive. Creating an empty zip file."
-            touch "$TEMP_ZIP_NAME" # Создаем пустой ZIP, чтобы артефакт все равно загрузился
-          fi
-          mv "$TEMP_ZIP_NAME" "$FINAL_ZIP_NAME"
-      - name: Upload Trivy Reports ZIP Artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-all-reports
-          path: trivy-all-reports.zip
-          retention-days: 5
-
   zap-dast:
     runs-on: ubuntu-latest
+    needs: [semgrep-sast]
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PAT }}
-
-      - name: Create Docker network
-        run: docker network create zap-net || true
-
-      - name: Run vulnerable-api container
+      - name: Start vulnerable API service
         run: |
-          docker run -d --rm --network zap-net --name vulnerable-api \
-            -p 8081:8081 \
-            ghcr.io/pr0slittt/vulnerable-api-practika:latest
-      - name: Wait for API readiness
+          # Запускаем API (зависит от твоего проекта)
+          docker-compose up -d
+
+      - name: Wait for API to be available
         run: |
-          for i in {1..15}; do
-            if curl -s http://localhost:8081; then
+          # Проверяем доступность API (замени на нужный порт/URL)
+          for i in {1..30}; do
+            if curl -s http://localhost:8081/health; then
               echo "API is up"
               break
-            else
-              echo "Waiting for API..."
-              sleep 2
             fi
+            echo "Waiting for API..."
+            sleep 2
           done
-      - name: Fix permissions for workspace folder
-        run: sudo chmod -R a+w ${{ github.workspace }}
 
-      - name: Run OWASP ZAP baseline scan with custom scripts
+      - name: Create ZAP Lua script dynamically
         run: |
-          # Создаем временную директорию для монтирования скриптов
           mkdir -p zap_scripts_to_mount
-          # Копируем содержимое нашей папки zap-rules во временную директорию
-          cp -r zap-rules/* zap_scripts_to_mount/ 
-          # Запуск ZAP Docker контейнера с монтированием кастомных скриптов
-          # Теперь монтируем обе директории: /zap/wrk для отчетов и /zap/scripts для кастомных скриптов
+          cat <<'EOF' > zap_scripts_to_mount/leak_tokens_alert.lua
+          function scanNode(as, msg)
+            local uri = msg:getRequestHeader():getURI()
+            if uri:getPath() and uri:getPath():match("/tokens") then
+              local resp_body = msg:getResponseBody():toString()
+              if resp_body and #resp_body > 0 then
+                as.raiseAlert(2, 3, "Information Leak via /tokens endpoint",
+                  "Endpoint /tokens возвращает чувствительную информацию, что может привести к утечке данных.",
+                  msg:getRequestHeader():getURI():toString(),
+                  "", "", resp_body, 0, 0, msg)
+              end
+            end
+          end
+
+          function scan(as, msg, param, value)
+          end
+          EOF
+
+      - name: Run OWASP ZAP baseline scan with dynamic script
+        run: |
           docker run --rm --network host \
-                     -v "${{ github.workspace }}:/zap/wrk/:rw" \
-                     -v "$(pwd)/zap_scripts_to_mount:/zap/scripts:rw" \
-                     ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -v "${{ github.workspace }}:/zap/wrk/:rw" \
+            -v "${{ github.workspace }}/zap_scripts_to_mount:/zap/scripts:rw" \
+            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
             -t http://localhost:8081 \
             -r zap-report.html \
             -J zap-report.json \
             -x zap-report.xml \
             -I \
-            -s all
-      - uses: actions/upload-artifact@v4
+            -s all \
+            -S "/zap/scripts/leak_tokens_alert.lua"
+
+      - name: Upload ZAP reports
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: zap-reports
           path: |
             zap-report.html
             zap-report.json
             zap-report.xml
+
+      - name: Shutdown vulnerable API service
+        if: always()
+        run: |
+          docker-compose down
