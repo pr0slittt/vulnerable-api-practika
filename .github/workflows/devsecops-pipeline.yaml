@@ -30,7 +30,7 @@ jobs:
           pip install "semgrep>=1.76.0"
           semgrep --version
       - name: Run Semgrep SAST Scan (SARIF for Code Scanning)
-        id: semgrep_scan_run
+        id: semgrep_sarif_scan_run # Изменил ID, чтобы избежать дублирования, если был такой
         run: |
           SARIF_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.sarif"
           semgrep \
@@ -42,20 +42,21 @@ jobs:
             ./app \
             --verbose || true
           echo "semgrep_exit_code=$?" >> "$GITHUB_OUTPUT"
-      - uses: github/codeql-action/upload-sarif@v3
+      - name: Upload Semgrep SARIF to Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'semgrep-results.sarif'
           wait-for-processing: true
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Semgrep SARIF Report Artifact
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: semgrep-sarif-report
           path: semgrep-results.sarif
           retention-days: 5
 
-      # НОВЫЙ ШАГ: Run Semgrep SAST Scan (JSON for Table Output)
-      - name: Run Semgrep SAST Scan (JSON Output)
+      - name: Run Semgrep SAST Scan (JSON Output for Table and Artifact)
         id: semgrep_json_scan
         run: |
           JSON_OUTPUT_PATH="${{ github.workspace }}/semgrep-results.json"
@@ -77,8 +78,7 @@ jobs:
           path: semgrep-results.json
           retention-days: 5
 
-      # НОВЫЙ ШАГ: Format Semgrep JSON to Table and Save to File
-      - name: Format Semgrep JSON to Table
+      - name: Format Semgrep JSON to Table and Save to File
         run: |
           if [ -s "${{ github.workspace }}/semgrep-results.json" ]; then
             echo "Category | Rule ID | Severity | File | Line | Description" > semgrep-table-report.txt
@@ -94,7 +94,7 @@ jobs:
             echo "No Semgrep results found." > semgrep-table-report.txt
           fi
         env:
-          PYTHONUNBUFFERED: 1 # Для более предсказуемого вывода в логах
+          PYTHONUNBUFFERED: 1
 
       - name: Upload Semgrep Table Report Artifact
         if: always()
@@ -121,19 +121,21 @@ jobs:
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
           grype version
-      - name: Run Grype SCA Scan
-        id: grype_scan_run
+      - name: Run Grype SCA Scan (SARIF for Code Scanning)
+        id: grype_sarif_scan_run
         run: |
           GRYPE_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
           grype dir:./app -o sarif --file "$GRYPE_OUTPUT_PATH" || true
           echo "grype_exit_code=$?" >> "$GITHUB_OUTPUT"
-      - uses: github/codeql-action/upload-sarif@v3
+      - name: Upload Grype SARIF to Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'grype-results.sarif'
           wait-for-processing: true
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Grype SARIF Report Artifact
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: grype-sarif-report
           path: grype-results.sarif
@@ -146,8 +148,8 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Run Checkov IaC Scan
-        id: checkov
+      - name: Run Checkov IaC Scan (SARIF for Code Scanning)
+        id: checkov_sarif_scan_run
         uses: bridgecrewio/checkov-action@v12
         with:
           directory: .
@@ -155,7 +157,7 @@ jobs:
           output_format: sarif
           output_file_path: checkov_results.sarif/results_sarif.sarif
 
-      - name: Upload SARIF report
+      - name: Upload Checkov SARIF to Code Scanning
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
@@ -164,8 +166,9 @@ jobs:
           checkout_path: ${{ github.workspace }}
           wait-for-processing: true
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Checkov SARIF Report Artifact
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: checkov-sarif-report
           path: checkov_results.sarif/results_sarif.sarif
@@ -191,6 +194,7 @@ jobs:
           cat trivy-table-report.txt
       - name: Upload Trivy Table Report Artifact
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: trivy-table-report
           path: trivy-table-report.txt
@@ -211,7 +215,7 @@ jobs:
             echo "ERROR: SARIF file not found!"
             exit 1
           fi
-      - name: Upload Trivy SARIF report
+      - name: Upload Trivy SARIF to Code Scanning
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
