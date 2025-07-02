@@ -134,12 +134,12 @@ jobs:
         id: grype_sarif_scan
         run: |
           SARIF_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
-          grype dir:./app -o sarif --file "$SARIF_OUTPUT_PATH" || true
+          grype dir:. -o sarif --file "$SARIF_OUTPUT_PATH" || true
       # Запуск Grype для табличного отчета (для архива)
       - name: Run Grype SCA Scan (Table Output)
         run: |
           TABLE_REPORT_PATH="${{ github.workspace }}/grype-table-report.txt"
-          grype dir:./app --format table > "$TABLE_REPORT_PATH" || true
+          grype dir:. --format table > "$TABLE_REPORT_PATH" || true
           cat "$TABLE_REPORT_PATH"
       # Загружаем SARIF в Code Scanning
       - name: Upload Grype SARIF to Code Scanning
