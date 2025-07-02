@@ -1,11 +1,9 @@
-name: "DevSecOps Pipeline"
-
+name: DevSecOps Pipeline
 on:
   push:
     branches: [main, master]
   pull_request:
-    branches: [main, master] 
-
+    branches: [main, master]
 permissions:
   contents: read
   security-events: write # Требуется для Code Scanning
@@ -15,11 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
       - name: Install dependencies and jq
         run: |
           python -m pip install --upgrade pip
@@ -73,14 +69,12 @@ jobs:
           fi
         env:
           PYTHONUNBUFFERED: 1
-
       # Загружаем SARIF в Code Scanning (этот шаг остается отдельным, так как он не для артефактов)
       - name: Upload Semgrep SARIF to Code Scanning
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'semgrep-results.sarif'
           wait-for-processing: true
-
       # СОЗДАЕМ ОДИН ZIP-АРХИВ ДЛЯ ВСЕХ ОТЧЕТОВ SEMGREP
       - name: Archive Semgrep Reports to single ZIP
         run: |
@@ -121,10 +115,8 @@ jobs:
           path: ~/.grype/db
           key: ${{ runner.os }}-grype-db-${{ hashFiles('grype-db-version.txt') }}
           restore-keys: ${{ runner.os }}-grype-db-
-
       - name: Create Grype DB Version File
         run: echo "1" > grype-db-version.txt
-
       - name: Install Grype
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
@@ -134,12 +126,13 @@ jobs:
         id: grype_sarif_scan
         run: |
           SARIF_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
-          grype dir:. -o sarif --file "$SARIF_OUTPUT_PATH" || true
+          grype dir:./app -o sarif --file "$SARIF_OUTPUT_PATH" || true
       # Запуск Grype для табличного отчета (для архива)
       - name: Run Grype SCA Scan (Table Output)
         run: |
           TABLE_REPORT_PATH="${{ github.workspace }}/grype-table-report.txt"
-          grype dir:. --format table > "$TABLE_REPORT_PATH" || true
+          # ИСПРАВЛЕНО: удален неверный флаг --format table. Grype по умолчанию выводит табличный формат.
+          grype dir:./app > "$TABLE_REPORT_PATH" || true
           cat "$TABLE_REPORT_PATH"
       # Загружаем SARIF в Code Scanning
       - name: Upload Grype SARIF to Code Scanning
@@ -147,7 +140,6 @@ jobs:
         with:
           sarif_file: 'grype-results.sarif'
           wait-for-processing: true
-
       # СОЗДАЕМ ОДИН ZIP-АРХИВ ДЛЯ ВСЕХ ОТЧЕТОВ GRYPE
       - name: Archive Grype Reports to single ZIP
         run: |
@@ -181,7 +173,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
       - name: Run Checkov IaC Scan (SARIF Output)
         id: checkov_sarif_scan
         uses: bridgecrewio/checkov-action@v12
@@ -190,7 +181,6 @@ jobs:
           framework: dockerfile,kubernetes,terraform,cloudformation,arm,ansible,serverless
           output_format: sarif
           output_file_path: checkov_results.sarif/results_sarif.sarif
-
       - name: Run Checkov IaC Scan (CLI Output)
         run: |
           CLI_REPORT_PATH="${{ github.workspace }}/checkov-cli-report.txt"
@@ -207,7 +197,6 @@ jobs:
           category: Checkov
           checkout_path: ${{ github.workspace }}
           wait-for-processing: true
-
       # СОЗДАЕМ ОДИН ZIP-АРХИВ ДЛЯ ВСЕХ ОТЧЕТОВ CHECKEV (SARIF и CLI)
       - name: Archive Checkov Reports to single ZIP
         run: |
@@ -250,15 +239,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-
       - name: Build Docker Image
         id: set-tag
         run: |
           docker build -t vulnerable-api:latest .
+          # Используем GITHUB_ENV для сохранения переменной окружения
           echo "IMAGE_TAG=vulnerable-api:latest" >> $GITHUB_ENV
       - name: Install Trivy
         run: curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo bash -s -- -b /usr/local/bin
-
       # Запуск Trivy для SARIF (для GitHub Code Scanning и для архива)
       - name: Run Trivy Scan (SARIF Output)
         id: trivy_sarif_scan
@@ -277,7 +265,6 @@ jobs:
           category: Trivy
           checkout_path: ${{ github.workspace }}
           wait-for-processing: true
-
       # СОЗДАЕМ ОДИН ZIP-АРХИВ ДЛЯ ВСЕХ ОТЧЕТОВ TRIVY
       - name: Archive Trivy Reports to single ZIP
         run: |
@@ -309,16 +296,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_PAT }}
-
       - name: Create Docker network
         run: docker network create zap-net || true
-
       - name: Run vulnerable-api container
         run: |
           docker run -d --rm --network zap-net --name vulnerable-api \
@@ -337,13 +321,12 @@ jobs:
           done
       - name: Fix permissions for workspace folder
         run: sudo chmod -R a+w ${{ github.workspace }}
-
       - name: Run OWASP ZAP baseline scan with custom scripts
         run: |
           # Создаем временную директорию для монтирования скриптов
           mkdir -p zap_scripts_to_mount
           # Копируем содержимое нашей папки zap-rules во временную директорию
-          cp -r zap-rules/* zap_scripts_to_mount/ 
+          cp -r zap-rules/* zap_scripts_to_mount/
           # Запуск ZAP Docker контейнера с монтированием кастомных скриптов
           # Теперь монтируем обе директории: /zap/wrk для отчетов и /zap/scripts для кастомных скриптов
           docker run --rm --network host \
