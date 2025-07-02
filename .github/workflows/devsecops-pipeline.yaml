@@ -122,20 +122,19 @@ jobs:
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo bash -s -- -b /usr/local/bin
           grype version
       # Запуск Grype для SARIF (для GitHub Code Scanning и для архива)
-      - name: Run Grype SCA Scan (SARIF Output)
+      - name: Запуск Grype Scan для SARIF отчёта
         id: grype_sarif_scan
         run: |
           SARIF_OUTPUT_PATH="${{ github.workspace }}/grype-results.sarif"
           grype dir:. -o sarif --file "$SARIF_OUTPUT_PATH" || true
       # Запуск Grype для табличного отчета (для архива)
-      - name: Run Grype SCA Scan (Table Output)
+      - name: Запуск Grype Scan для табличного отчёта
         run: |
           TABLE_REPORT_PATH="${{ github.workspace }}/grype-table-report.txt"
-          # ИСПРАВЛЕНО: удален неверный флаг --format table. Grype по умолчанию выводит табличный формат.
           grype dir:. > "$TABLE_REPORT_PATH" || true
           cat "$TABLE_REPORT_PATH"
       # Загружаем SARIF в Code Scanning
-      - name: Upload Grype SARIF to Code Scanning
+      - name: Загрузка Grype SARIF в Code Scanning
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'grype-results.sarif'
