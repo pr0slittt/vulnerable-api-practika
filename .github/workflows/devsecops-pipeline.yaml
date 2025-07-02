@@ -243,7 +243,6 @@ jobs:
         id: set-tag
         run: |
           docker build -t vulnerable-api:latest .
-          # Используем GITHUB_ENV для сохранения переменной окружения
           echo "IMAGE_TAG=vulnerable-api:latest" >> $GITHUB_ENV
       - name: Install Trivy
         run: curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo bash -s -- -b /usr/local/bin
@@ -321,17 +320,11 @@ jobs:
           done
       - name: Fix permissions for workspace folder
         run: sudo chmod -R a+w ${{ github.workspace }}
-      - name: Run OWASP ZAP baseline scan with custom scripts
+      - name: Run OWASP ZAP baseline scan
         run: |
-          # Создаем временную директорию для монтирования скриптов
-          mkdir -p zap_scripts_to_mount
-          # Копируем содержимое нашей папки zap-rules во временную директорию
-          cp -r zap-rules/* zap_scripts_to_mount/
-          # Запуск ZAP Docker контейнера с монтированием кастомных скриптов
-          # Теперь монтируем обе директории: /zap/wrk для отчетов и /zap/scripts для кастомных скриптов
+          # Запуск ZAP Docker контейнера без монтирования кастомных скриптов, так как папка 'zap-rules' удалена
           docker run --rm --network host \
                      -v "${{ github.workspace }}:/zap/wrk/:rw" \
-                     -v "$(pwd)/zap_scripts_to_mount:/zap/scripts:rw" \
                      ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
             -t http://localhost:8081 \
             -r zap-report.html \
