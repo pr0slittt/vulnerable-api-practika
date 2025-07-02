@@ -1,13 +1,13 @@
 """
-Confirmed active vulnerabilities:
-1. SQL Injection (SQL queries are not parameterized)
-2. Information Disclosure (undocumented GET /tokens route)
-3. User Enumeration (different error messages for login)
-4. Cleartext Password Storage (passwords not hashed)
-5. Insufficient Authorization (non-admin can create/delete users)
-6. Debug Mode Information Disclosure (debug=True)
-7. XXE (XML External Entity)
-8. CORS Misconfiguration (Access-Control-Allow-Origin: *)
+Выявленные уязвимости:
+1. SQL-инъекция
+2. Утечка информации через эндпоинт
+3. Получение информации через просроченный токен
+4. Использование небезопасных алгоритмов хеширования (MD5)
+5. Недостаточная авторизация (Insufficient Authorization)
+6. Раскрытие информации в режиме отладки
+7. Использование Уязвимых XML-парсеров (XXE)
+8. Неправильная Конфигурация CORS Misconfiguration
 
 """
 
@@ -59,7 +59,7 @@ def init_db():
         ("admin", "password"),
         ("user1", "user1pass"),
         ("test", "testpass"),
-        ("admin_super", "superpassword"),  # Пользователь с ID 10
+        ("admin_super", "superpassword"),  
     ]
     for username, password in initial_users:
         try:
@@ -74,11 +74,10 @@ def init_db():
 
     try:
         current_time = int(time.time())
-        expire_stamp = current_time + 300  # Токен истекает через 5 минут
+        expire_stamp = current_time + 300  
         expire_date_str = time.ctime(expire_stamp)
         token_str = hashlib.md5(expire_date_str.encode("utf-8")).hexdigest()
 
-        # Проверяем, существует ли уже токен для admin_super (userid 10)
         c.execute("SELECT * FROM users WHERE username = 'admin_super'")
         admin_super_user = c.fetchone()
         if admin_super_user:
@@ -104,13 +103,11 @@ def init_db():
     c.close()
     conn.close()
 
-
 @route("/", method="GET")
 def get_root():
 
     response = {"response": {"Application": "vulnerable-api", "Status": "running"}}
     return json.dumps(response, sort_keys=True, indent=2)
-
 
 @route("/tokens", method="POST")
 def get_token():
@@ -127,7 +124,7 @@ def get_token():
             # XXE (XML External Entity) vulnerability remains active
             parser = etree.XMLParser(
                 load_dtd=True, resolve_entities=True, no_network=False
-            )  # no_network=False позволяет внешние сущности
+            )  
             data = etree.parse(
                 request.body, parser
             )  # etree.parse может принимать файловые объекты
@@ -168,7 +165,7 @@ def get_token():
     else:
         conn.close()
         return json.dumps(
-            {"response": {"error": {"message": "Unsupported Content-Type"}}}, indent=2
+            {"response": {"error": {"message": "Unsupported Content-Type"}}}, in-dent=2
         )
 
     # SQL Injection vulnerability remains active (Username and Password in query)
@@ -200,7 +197,6 @@ def get_token():
                 token = token_record[1]
                 expire_date = time.ctime(int(token_record[3]))
             else:
-                # If no token or expired token, create new one
                 expire_date = time.ctime(int(expire_stamp))
                 token = hashlib.md5(
                     f"{username}{password}{expire_date}".encode("utf-8")
@@ -220,7 +216,7 @@ def get_token():
 
             response["access"]["token"] = {"id": token, "expires": expire_date}
         else:
-            # User Enumeration vulnerability remains active - tells if username exists
+            # User Enumeration vulnerability remains active - tells if username ex-ists
             c.execute("SELECT * FROM users WHERE username = '%s'" % username)
             user_exists = c.fetchone()
             if user_exists:
@@ -234,7 +230,6 @@ def get_token():
     finally:
         conn.close()
 
-
 @route("/tokens", method="GET")
 def get_get_token():
     """
@@ -243,12 +238,11 @@ def get_get_token():
     """
     conn = sqlite3.connect("vAPI.db")
     c = conn.cursor()
-    query = "SELECT id, username, password FROM users"  # Returns all users (Information Disclosure & Cleartext Password Storage)
+    query = "SELECT id, username, password FROM users"  
     c.execute(query)
     users = c.fetchall()
     conn.close()
     return {"response": users}
-
 
 @route("/user/<user_id>", method="GET")
 def get_user(user_id):
@@ -263,7 +257,7 @@ def get_user(user_id):
                 {"response": {"error": {"message": "X-Auth-Token header missing"}}}
             ),
             401,
-        )  # 401 Unauthorized
+        )  
 
     conn = sqlite3.connect("vAPI.db")
     c = conn.cursor()
@@ -275,14 +269,9 @@ def get_user(user_id):
         token_record = c.fetchone()
 
         response = {}
-        # Token Expiration vulnerability remains active - No proper check for expiration in many routes
+        # Token Expiration vulnerability remains active - No proper check for expira-tion in many routes
         if isinstance(token_record, tuple) and token_record[1] == str(token):
-            # The token is valid, but we will not explicitly check expiration here for this demo
-            # This makes the Token Expiration vulnerability active
-            # if token_record[3] < int(time.time()): # This line is commented to make it more vulnerable
-            #     response["error"] = {"message": "Token expired"}
-            # else:
-            # SQL Injection vulnerability remains active (User ID in query)
+            
             user_query = "SELECT * FROM users WHERE id = '%s'" % (user_id)
             c.execute(user_query)
             user_record = c.fetchone()
@@ -305,7 +294,6 @@ def get_user(user_id):
     finally:
         conn.close()
 
-
 @route("/user", method="POST")
 def create_user():
     """
@@ -324,7 +312,7 @@ def create_user():
     c = conn.cursor()
     try:
         # SQL Injection vulnerability remains active (Token in query)
-        # Insufficient Authorization is active: removed "AND userid = 10" from token_query.
+        # Insufficient Authorization is active: removed "AND userid = 10" from to-ken_query.
         # Any valid token (even non-admin) will be fetched, allowing user creation.
         token_query = "SELECT * FROM tokens WHERE token = '%s'" % (str(token))
         c.execute(token_query)
@@ -341,10 +329,9 @@ def create_user():
             password = data["user"]["password"]
 
             # No Input Validation remains active.
-            # ReDoS specific regex removed to avoid issues with demonstration.
             if (
                 name
-            ):  # Allows any non-empty string, demonstrating lack of strict validation
+            ):  # Allows any non-empty string, demonstrating lack of strict valida-tion
                 user_query = "SELECT * FROM users WHERE username = '%s'" % (
                     name
                 )  # SQL Injection vulnerability remains active
@@ -362,9 +349,9 @@ def create_user():
             else:
                 response["error"] = {
                     "message": "username cannot be empty!"
-                }  # More specific error message
+                }  
         else:
-            response["error"] = {"message": "must provide valid token or token expired"}
+            response["error"] = {"message": "must provide valid token or token ex-pired"}
         return {"response": response}
     except sqlite3.OperationalError as e:
         response = {"error": {"message": f"Database operation failed: {e}"}}
@@ -372,7 +359,6 @@ def create_user():
     finally:
         c.close()
         conn.close()
-
 
 @route("/user/<user_id>", method="DELETE")
 def delete_user_by_id(user_id):
@@ -409,9 +395,9 @@ def delete_user_by_id(user_id):
             c.execute(delete_query)
             conn.commit()
             if c.rowcount > 0:
-                response["message"] = "User with ID %s deleted successfully" % user_id
+                response["message"] = "User with ID %s deleted successfully" % us-er_id
             else:
-                response["error"] = {"message": "User with ID %s not found" % user_id}
+                response["error"] = {"message": "User with ID %s not found" % us-er_id}
         else:
             response["error"] = {
                 "message": "Invalid token or token not found or token expired"
@@ -422,14 +408,7 @@ def delete_user_by_id(user_id):
         return json.dumps(response, indent=2)
     finally:
         c.close()
-        conn.close()  # Закрываем соединение
-
-
-# Removed the /uptime endpoint and its associated command injection logic as per user request.
-# @route("/uptime", method="GET")
-# def display_uptime():
-#     # ... (removed content) ...
-#     pass
+        conn.close()  
 
 
 @hook("after_request")
@@ -443,7 +422,6 @@ def enable_cors():
     )
     resp.headers["Access-Control-Allow-Methods"] = "*"
     resp.headers["Access-Control-Allow-Headers"] = "*"
-
 
 init_db()
 
